@@ -37,6 +37,10 @@
   .pip{width:11px;height:11px;border:1px solid #55605a;border-radius:2px}
   .pip.b.on{background:var(--blue-l);border-color:var(--blue-l)}
   .pip.r.on{background:var(--red-l);border-color:var(--red-l)}
+  #terrain{margin-left:18px;padding:5px 10px;background:#ffffff0d;border:1px solid #ffffff1a;
+    color:var(--bone);font:inherit;font-size:12px;letter-spacing:.1em;text-transform:uppercase;
+    cursor:pointer;border-radius:2px}
+  #terrain:hover{background:#ffffff1c}
   #phase{margin-left:auto;font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--gold)}
 
   /* ---- corps ---- */
@@ -116,6 +120,7 @@
     <div class="stat"><b class="mono" id="turnN">1</b><i>tour / 12</i></div>
     <div class="stat"><i>zones tenues</i><div class="score" id="scoreB"></div></div>
     <div class="stat"><i>ennemi</i><div class="score" id="scoreR"></div></div>
+    <button id="terrain" title="Cliquer pour changer le terrain (relance une partie)">Terrain : Maison</button>
     <div id="phase">Phase d'ordres</div>
   </div>
 

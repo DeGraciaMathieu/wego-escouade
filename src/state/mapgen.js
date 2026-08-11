@@ -4,7 +4,7 @@
    sur la moitié gauche puis retourne à 180°, et ne retente que tant que la
    maison n'est pas jouable (mapValid).
    ========================================================================== */
-import { T, TI, COLS, ROWS, TILE, W, H, HALLZ, MAP_ATTEMPTS, MAP_PASS_MIN, MAP_FLOOR_MIN, MAP_REACH_MIN } from '../config.js';
+import { T, TI, COLS, ROWS, TILE, W, H, HALLZ, MAP_ATTEMPTS, MAP_PASS_MIN, MAP_FLOOR_MIN, MAP_REACH_MIN, ARCHETYPES } from '../config.js';
 import { idx, inMap, inAnyZone } from '../rules/geometry.js';
 import { isWallT, solid } from '../rules/terrain.js';
 
@@ -14,7 +14,7 @@ import { isWallT, solid } from '../rules/terrain.js';
        5 les portes, posées par arbre couvrant puis bouclées ·
        6 les pièces typées et meublées · 7 fenêtres, dégâts, rue et cour.
        Tout est composé sur la moitié gauche, puis retourné à 180°. --- */
-export function generateMap(rng){
+export function generateMap(rng, arch = ARCHETYPES.maison){
   let grid, indoor, rooms, zones;
   const rint=(a,b)=>Math.floor(a+rng()*(b-a+1));
 
@@ -32,13 +32,13 @@ export function generateMap(rng){
       if(inMap(x,y)&&x<HALF){ grid[idx(x,y)]=T.FLOOR; indoor[idx(x,y)]=1; } };
     fill(bx0,by0,HALF-1,by1);
     let aile=null;
-    if(rng()<0.65){                       // aile en avancée sur la cour
+    if(rng()<arch.wing){                       // aile en avancée sur la cour
       const h=rint(3,5), y=rint(by0+1,by1-h), w=rint(2,3);
       aile=[Math.max(2,bx0-w),y,bx0-1,y+h-1];
       fill(aile[0],aile[1],aile[2],aile[3]);
     }
     let patio=null;
-    if(rng()<0.55){                       // patio à ciel ouvert
+    if(rng()<arch.patio){                       // patio à ciel ouvert
       const w=rint(2,3), h=rint(2,3);
       const x=rint(bx0+2,HALLX-2-w), y=rint(by0+2,by1-2-h);
       patio=[x,y,x+w-1,y+h-1];
@@ -65,7 +65,7 @@ export function generateMap(rng){
     const split=(x0,y0,x1,y1,d)=>{
       const w=x1-x0+1, h=y1-y0+1;
       const canV=w>=5, canH=h>=5;
-      if(d>=4||(!canV&&!canH)||(w<=6&&h<=6&&rng()<0.22)) return;
+      if(d>=4||(!canV&&!canH)||(w<=6&&h<=6&&rng()<arch.partitionStop)) return;
       if(canV&&(!canH||w>=h)){ const c=rint(x0+2,x1-2); wallCol(c,y0,y1);
         split(x0,y0,c-1,y1,d+1); split(c+1,y0,x1,y1,d+1); }
       else { const r=rint(y0+2,y1-2); wallRow(r,x0,x1);
@@ -117,9 +117,9 @@ export function generateMap(rng){
     for(const d of doors){
       if(uni(d.a,d.b)) put(d.x,d.y,T.FLOOR); else extra.push(d);
     }
-    for(const d of extra) if(!d.ext&&rng()<0.07) put(d.x,d.y,T.FLOOR);   // quelques boucles
+    for(const d of extra) if(!d.ext&&rng()<arch.loop) put(d.x,d.y,T.FLOOR);   // quelques boucles
     for(const d of doors)                                                        // quelques baies larges
-      if(at(d.x,d.y)===T.FLOOR&&!d.ext&&rng()<0.14){
+      if(at(d.x,d.y)===T.FLOOR&&!d.ext&&rng()<arch.wideBay){
         const [ox,oy]=rng()<.5?[0,1]:[1,0];
         if(at(d.x+ox,d.y+oy)===T.PART) put(d.x+ox,d.y+oy,T.FLOOR);
       }
@@ -138,7 +138,7 @@ export function generateMap(rng){
       const isCorridor=cells.every(c=>c[1]===cy)||n>=6&&cells.filter(c=>c[1]===cy).length===n;
       const type=isCorridor?'COULOIR':n>=18?pick(GRAND):n>=10?pick(MOYEN):n>=5?pick(PETIT):pick(MINUS);
       const poser=(f,p,mur)=>{ for(const [x,y] of cells)
-        if(at(x,y)===T.FLOOR&&rng()<p&&(mur===undefined||contreMur(x,y)===mur)) put(x,y,f); };
+        if(at(x,y)===T.FLOOR&&rng()<p*arch.furniture&&(mur===undefined||contreMur(x,y)===mur)) put(x,y,f); };
       if(type==='SALON'||type==='SÉJOUR'){ poser(T.WALL,0.20,false); poser(T.WOOD,0.16,true); }
       else if(type==='CUISINE'){ poser(T.WALL,0.55,true); poser(T.WOOD,0.18,true); }
       else if(type==='CHAMBRE'){ poser(T.WALL,0.30,true); poser(T.WOOD,0.22,true); }
@@ -163,13 +163,13 @@ export function generateMap(rng){
     for(const [x,y] of ring){
       if(at(x,y)!==T.BLD) continue;
       if(x===bx0&&y===cy) continue;
-      if(rng()<0.28){
+      if(rng()<arch.window){
         put(x,y,T.WIN);
         const [dx,dy]=(at(x-1,y)===T.BLD||at(x+1,y)===T.BLD)?[1,0]:[0,1];
-        if(rng()<0.4&&at(x+dx,y+dy)===T.BLD) put(x+dx,y+dy,T.WIN);
+        if(rng()<arch.windowDouble&&at(x+dx,y+dy)===T.BLD) put(x+dx,y+dy,T.WIN);
       }
     }
-    if(rng()<0.85){                        // un obus est tombé
+    for(let s=0;s<arch.shells;s++) if(rng()<arch.shellP){   // des obus sont tombés
       const ex=rint(bx0+1,HALF-2), ey=rint(by0+1,by1-1);
       for(let j=-1;j<=1;j++) for(let i=-1;i<=1;i++){
         const v=at(ex+i,ey+j);

@@ -15,6 +15,7 @@ import {
   SMOKE_R, SMOKE_TURNS, SMOKE_RANGE,
   MAP_ATTEMPTS, MAP_PASS_MIN, MAP_FLOOR_MIN, MAP_REACH_MIN,
   REC_HZ, UF, BF,
+  ARCHETYPES, ARCHETYPE_ORDER,
 } from './config.js';
 import { createRng } from './rng.js';
 import { idx, inMap, inZone, inAnyZone, zoneCenter } from './rules/geometry.js';
@@ -48,6 +49,7 @@ let grid, indoor, rooms, units, bullets, parts, nades, smokes, smokeGrid;
 let turn, phase, rt, shake, hitstop, scoreB, scoreR, over;
 let sel=null, mode='auto', hover={x:-999,y:-999}, hoverPath=null, speed=1;
 let showThreat=false;                   // overlay de menace (touche A)
+let archetypeKey='maison';              // type de terrain choisi pour la partie
 let mem={};           // mémoire du joueur : dernière position connue des ennemis
 let aiMem={};         // mémoire de l'IA
 let zones=[];                           // zones de contrôle du tirage courant
@@ -56,7 +58,7 @@ let zones=[];                           // zones de contrôle du tirage courant
    CARTE
    ========================================================================== */
 function genMap(){
-  ({grid,indoor,rooms,zones}=generateMap(rng));
+  ({grid,indoor,rooms,zones}=generateMap(rng,ARCHETYPES[archetypeKey]));
   mapSeed=(Math.random()*4294967296)>>>0;
   drawTerrain();
 }
@@ -1362,6 +1364,14 @@ document.getElementById('bClear').onclick=()=>{ if(sel){sel.mv=null;sel.fire=nul
 document.getElementById('go').onclick=()=>{ audio(); if(phase==='plan') beginResolve(); };
 document.getElementById('ovB').onclick=()=>{ document.getElementById('over').classList.remove('on'); newGame(); };
 document.getElementById('ovR').onclick=()=>{ audio(); startReplay(); };
+/* choix du terrain : cliquer fait défiler les archétypes et relance une partie */
+function updateTerrainLabel(){ document.getElementById('terrain').textContent='Terrain : '+ARCHETYPES[archetypeKey].name; }
+document.getElementById('terrain').onclick=()=>{
+  const i=ARCHETYPE_ORDER.indexOf(archetypeKey);
+  archetypeKey=ARCHETYPE_ORDER[(i+1)%ARCHETYPE_ORDER.length];
+  updateTerrainLabel(); newGame();
+};
+updateTerrainLabel();
 document.getElementById('rpQuit').onclick=()=>quitReplay();
 document.getElementById('rpPlay').onclick=()=>{ rp.playing=!rp.playing; updateReplayUI(); };
 document.getElementById('rpPrev').onclick=()=>loadReplayTurn(rp.t>1.2?rp.ti:rp.ti-1);

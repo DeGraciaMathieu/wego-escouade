@@ -84,6 +84,23 @@ export const MAP_PASS_MIN = 0.5;             // proportion de tuiles franchissab
 export const MAP_FLOOR_MIN = 0.26;           // proportion de tuiles FLOOR requise
 export const MAP_REACH_MIN = 0.94;           // proportion des tuiles intérieures devant être atteignables
 
+/* ---------- archétypes de carte ----------
+   Presets de réglages passés à generateMap. Le pipeline (symétrie 180°, validité,
+   zones) est commun ; seuls ces leviers changent le style de jeu.
+   maison = valeurs historiques (comportement inchangé).
+   - wing/patio : probabilité d'aile / de patio
+   - partitionStop : proba d'arrêt du cloisonnement (haut = grandes pièces, ouvert)
+   - loop/wideBay : ouvertures supplémentaires (boucles, baies larges)
+   - furniture : multiplicateur de densité du mobilier
+   - window/windowDouble : proba de fenêtre / de double fenêtre
+   - shells/shellP : nombre de tirs d'obus et proba de chacun (dégâts, gravats) */
+export const ARCHETYPE_ORDER = ['maison', 'ruines', 'ouvert'];
+export const ARCHETYPES = {
+  maison: { name:'Maison', wing:0.65, patio:0.55, partitionStop:0.22, loop:0.07, wideBay:0.14, furniture:1.0,  window:0.28, windowDouble:0.40, shells:1, shellP:0.85 },
+  ruines: { name:'Ruines', wing:0.65, patio:0.45, partitionStop:0.30, loop:0.16, wideBay:0.28, furniture:0.55, window:0.42, windowDouble:0.45, shells:3, shellP:0.90 },
+  ouvert: { name:'Ouvert', wing:0.45, patio:0.75, partitionStop:0.50, loop:0.20, wideBay:0.34, furniture:0.70, window:0.60, windowDouble:0.55, shells:1, shellP:0.50 },
+};
+
 /* ---------- replay ---------- */
 export const REC_HZ = 60;                    // fréquence d'enregistrement du replay (images/seconde)
 export const UF = 7, BF = 7;                 // nombre de floats par unité / par balle dans une image de replay

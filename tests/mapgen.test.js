@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { generateMap } from '../src/state/mapgen.js';
 import { createRng } from '../src/rng.js';
 import { idx } from '../src/rules/geometry.js';
-import { COLS, ROWS } from '../src/config.js';
+import { solid } from '../src/rules/terrain.js';
+import { COLS, ROWS, ARCHETYPES, ARCHETYPE_ORDER } from '../src/config.js';
 
 test('à graine fixe, la carte générée est reproductible à l\'identique', () => {
   const a = generateMap(createRng(12345));
@@ -29,4 +30,33 @@ test('une maison est bien composée : sols et murs présents', () => {
   const floors = [...grid].filter(v => v === 7).length;   // T.FLOOR
   const walls = [...grid].filter(v => v === 1).length;    // T.BLD
   assert.ok(floors > 0 && walls > 0);
+});
+
+// chaque archétype réutilise le même pipeline : symétrie, hall et déploiements dégagés
+const SPAWN_Y = [2, 6, 10, 14];
+for (const key of ARCHETYPE_ORDER) {
+  test(`archétype « ${key} » : carte symétrique, hall présent, déploiements praticables`, () => {
+    const { grid, zones } = generateMap(createRng(2024), ARCHETYPES[key]);
+    for (let y = 0; y < ROWS; y++)
+      for (let x = 0; x < COLS; x++)
+        assert.equal(grid[idx(x, y)], grid[idx(COLS - 1 - x, ROWS - 1 - y)]);
+    assert.ok(zones.some(z => z.n === 'HALL'));
+    for (const y of SPAWN_Y) {                              // les 4 unités de chaque camp entrent
+      assert.equal(solid(grid, 1, y), false);
+      assert.equal(solid(grid, COLS - 2, ROWS - 1 - y), false);
+    }
+  });
+}
+
+test('un archétype donné reste reproductible à graine fixe', () => {
+  const a = generateMap(createRng(5), ARCHETYPES.ruines);
+  const b = generateMap(createRng(5), ARCHETYPES.ruines);
+  assert.deepEqual([...a.grid], [...b.grid]);
+});
+
+test('l\'archétype ouvert cloisonne moins que la maison', () => {
+  const maison = generateMap(createRng(77), ARCHETYPES.maison);
+  const ouvert = generateMap(createRng(77), ARCHETYPES.ouvert);
+  const parts = g => [...g].filter(v => v === 9).length;   // T.PART (cloisons)
+  assert.ok(parts(ouvert.grid) < parts(maison.grid));
 });

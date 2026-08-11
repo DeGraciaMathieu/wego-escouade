@@ -6,11 +6,23 @@ auto_invoke: true
 
 # Génération de carte — `src/state/mapgen.js`
 
-`generateMap(rng)` est **pur** : à graine fixe, il rend toujours la même carte. Il compose
-la maison sur la **moitié gauche** puis la retourne à **180°**, et ne retente
-(`MAP_ATTEMPTS`) que tant que la maison n'est pas jouable (`mapValid`). Retourne
+`generateMap(rng, arch)` est **pur** : à graine (et archétype) fixe, il rend toujours la même
+carte. Il compose la maison sur la **moitié gauche** puis la retourne à **180°**, et ne
+retente (`MAP_ATTEMPTS`) que tant que la maison n'est pas jouable (`mapValid`). Retourne
 `{grid, indoor, rooms, zones}` ; `main.js` (`genMap`) l'assigne à l'état et déclenche
 `drawTerrain`.
+
+## Archétypes (styles de terrain)
+
+`arch` est un **preset de réglages** défini dans `config.js` (`ARCHETYPES`, ordre
+`ARCHETYPE_ORDER`), par défaut `ARCHETYPES.maison` (= valeurs historiques, comportement
+inchangé). Le **pipeline est commun** — mêmes étapes, même symétrie/validité/zones ; seuls
+les leviers changent : `wing`/`patio` (proba d'aile/patio), `partitionStop` (densité de
+cloisonnement — haut = grandes pièces), `loop`/`wideBay` (ouvertures), `furniture`
+(multiplicateur de mobilier), `window`/`windowDouble`, `shells`/`shellP` (obus → gravats).
+Trois archétypes : `maison` (cloisonné), `ruines` (bombardé, couvert brisé), `ouvert`
+(grandes pièces, longues lignes de vue). Le joueur en change via le bouton **Terrain** de la
+barre du haut (`#terrain`), ce qui relance une partie.
 
 ## Étapes de `buildMap` (fonction interne)
 
@@ -44,9 +56,19 @@ Chaque nature porte un `cost` et un `pass` dans `TI`. Ne pas réinventer ces cl�
 
 1. Éditer `buildMap` dans `src/state/mapgen.js` ; utiliser **`rint`/`rng()` internes**
    (jamais `Math.random`) pour rester déterministe.
-2. Toute proportion/seuil/probabilité réglable → `config.js` (ex. `MAP_*`) ; sinon garder
-   au plus près de l'étape.
+2. Toute proportion/seuil/probabilité réglable → `config.js` (ex. `MAP_*`, ou un levier
+   d'archétype dans `ARCHETYPES`) ; sinon garder au plus près de l'étape.
 3. Préserver la **symétrie 180°** (les deux camps doivent avoir des positions miroir) et la
    **validité** (`mapValid`).
 4. Mettre à jour `tests/mapgen.test.js` : déterminisme (même graine → même `grid`), symétrie,
    présence du hall, invariant structurel visé. `npm test` vert.
+
+## Ajouter un archétype
+
+1. Ajouter un preset dans `ARCHETYPES` (`config.js`) avec un `name` et les leviers, et sa
+   clé dans `ARCHETYPE_ORDER`.
+2. Si le style demande un nouveau levier, exposer un `arch.<levier>` dans `buildMap` (en
+   remplaçant un littéral) — garder la valeur du preset `maison` égale à l'ancien littéral
+   pour ne rien changer à la maison.
+3. Ajouter au test la boucle d'invariants (symétrie, hall, déploiements praticables) — elle
+   itère déjà `ARCHETYPE_ORDER`. Vérifier sur plusieurs graines que la carte reste valide.
