@@ -4,7 +4,7 @@
    au premier son et seulement si la fenêtre a le focus.
    ========================================================================== */
 let AC=null, noiseBuf=null, lastSnd=0, sndCount=0;
-function audio(){
+export function audio(){
   if(AC) return AC;
   AC=new (window.AudioContext||window.webkitAudioContext)();
   noiseBuf=AC.createBuffer(1,AC.sampleRate*0.5,AC.sampleRate);

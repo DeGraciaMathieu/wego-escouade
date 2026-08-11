@@ -26,7 +26,7 @@ import { findPath, trimPath } from './rules/pathfind.js';
 import { zoneControl, roundPoint, victoryOutcome, timeUpOutcome } from './rules/victory.js';
 import { hitChance, shotAngle } from './rules/combat.js';
 import { threatTiles } from './rules/threat.js';
-import { sfx } from './audio/audio.js';
+import { sfx, audio } from './audio/audio.js';
 import { generateMap } from './state/mapgen.js';
 import { aiPlan } from './ai/plan.js';
 
