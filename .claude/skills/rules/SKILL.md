@@ -34,6 +34,7 @@ l'orchestration → elle reste dans le moteur (`main.js`). Le dis plutôt que de
 | Chemin A*, troncature au budget de déplacement | `findPath, trimPath` | `pathfind.js` | `grid` |
 | Qui tient chaque zone, point du tour, fin de partie | `zoneControl, roundPoint, victoryOutcome, timeUpOutcome` | `victory.js` | `zones, units` |
 | Probabilité de toucher, angle du projectile | `hitChance, shotAngle` | `combat.js` | (params + `rng`) |
+| Carte de menace (d'où un ennemi connu voit/tire chaque tuile) | `threatTiles` | `threat.js` | `grid, smokeGrid, enemies` |
 
 ## L'aléa dans une règle
 

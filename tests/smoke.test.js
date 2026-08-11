@@ -69,3 +69,9 @@ test('le replay du tour joué se déroule sans planter', async () => {
   for (let i = 0; i < 60; i++) g.stepReplay(1 / 60);
   assert.ok(true); // aucune exception levée
 });
+
+test('le rendu d\'une frame ne plante pas (pipeline de dessin, aides tactiques)', async () => {
+  const g = await import('../src/main.js');
+  g.draw();          // exercice le pipeline de rendu sous les stubs canvas
+  assert.ok(true);   // aucune exception levée
+});

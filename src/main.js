@@ -24,6 +24,7 @@ import { los } from './rules/los.js';
 import { findPath, trimPath } from './rules/pathfind.js';
 import { zoneControl, roundPoint, victoryOutcome, timeUpOutcome } from './rules/victory.js';
 import { hitChance, shotAngle } from './rules/combat.js';
+import { threatTiles } from './rules/threat.js';
 import { sfx } from './audio/audio.js';
 import { generateMap } from './state/mapgen.js';
 import { aiPlan } from './ai/plan.js';
@@ -46,6 +47,7 @@ const dist=(a,b,c,d)=>Math.hypot(a-c,b-d);
 let grid, indoor, rooms, units, bullets, parts, nades, smokes, smokeGrid;
 let turn, phase, rt, shake, hitstop, scoreB, scoreR, over;
 let sel=null, mode='auto', hover={x:-999,y:-999}, hoverPath=null, speed=1;
+let showThreat=false;                   // overlay de menace (touche A)
 let mem={};           // mémoire du joueur : dernière position connue des ennemis
 let aiMem={};         // mémoire de l'IA
 let zones=[];                           // zones de contrôle du tirage courant
@@ -322,6 +324,19 @@ function setupUnits(){
 }
 const alive=s=>units.filter(u=>u.alive&&u.side===s);
 const byId=i=>units.find(u=>u.id===i);
+
+/* ennemis connus du joueur : vus (position réelle) ou en mémoire récente (≤3 tours),
+   avec leur portée de tir efficace — sert à l'affichage de menace et de couverture */
+function knownEnemies(){
+  const out=[];
+  for(const u of units){
+    if(u.side!=='r'||!u.alive) continue;
+    const reach=u.c.ideal+u.c.fall;
+    if(u.seen) out.push({x:u.x,y:u.y,reach});
+    else { const m=mem[u.id]; if(m&&turn-m.turn<=3) out.push({x:m.x,y:m.y,reach}); }
+  }
+  return out;
+}
 
 /* visibilité : une unité voit à VIEW px avec ligne de vue */
 function updateVision(){
@@ -872,6 +887,7 @@ function draw(){
   if(shake>0.2){ const s=shake; ctx.translate(rnd(-s,s),rnd(-s,s)); }
   ctx.drawImage(terrainCv,0,0);
   ctx.drawImage(decalCv,0,0);
+  if(phase==='plan'&&showThreat) drawThreat();
 
   for(const z of zones){                       // à qui la zone est-elle acquise ?
     if(!z.held) continue;
@@ -892,6 +908,7 @@ function draw(){
     ctx.beginPath(); ctx.arc(sel.x,sel.y,sel.c.ideal+sel.c.fall,0,6.283); ctx.stroke();
     ctx.setLineDash([]); ctx.restore();
   }
+  if(phase==='plan'&&hover.x>=0) drawCoverHint();
 
   if(phase==='resolve') for(const u of units) if(u.alive&&u.side==='b') drawWatchCone(u,0.62,true);
   drawGhosts();
@@ -1158,6 +1175,42 @@ function drawCrossings(sx,sy,pts,alpha){
 }
 
 /* calques d'ordres — annotations au crayon gras sur l'acétate */
+/* overlay de menace : tuiles d'où un ennemi connu peut voir/tirer (touche A) */
+function drawThreat(){
+  const enemies=knownEnemies();
+  if(!enemies.length) return;
+  const threat=threatTiles(grid,smokeGrid,enemies);
+  ctx.save();
+  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
+    const n=threat[idx(x,y)];
+    if(!n) continue;
+    ctx.fillStyle=`rgba(168,50,42,${Math.min(0.34,0.12+n*0.10)})`;
+    ctx.fillRect(x*TILE,y*TILE,TILE,TILE);
+  }
+  ctx.restore();
+}
+
+/* aperçu de couverture : la tuile survolée est-elle sûre, à couvert, ou exposée ? */
+function drawCoverHint(){
+  const gx=Math.floor(hover.x/TILE), gy=Math.floor(hover.y/TILE);
+  if(!inMap(gx,gy)) return;
+  const enemies=knownEnemies();
+  if(!enemies.length) return;
+  const cx=gx*TILE+TILE/2, cy=gy*TILE+TILE/2;
+  let threatened=false, best=1;
+  for(const e of enemies){
+    if(Math.hypot(e.x-cx,e.y-cy)<=e.reach&&los(grid,smokeGrid,e.x,e.y,cx,cy)){
+      threatened=true; best=Math.min(best,coverMul(grid,e.x,e.y,cx,cy));
+    }
+  }
+  let txt,col;
+  if(!threatened){ txt='SÛR'; col='#3E8F4E'; }
+  else if(best<0.95){ txt='À COUVERT'; col='#C9A227'; }
+  else { txt='EXPOSÉ'; col='#DE6247'; }
+  ctx.save(); ctx.font='10px "Arial Narrow",sans-serif'; ctx.fillStyle=col;
+  ctx.textAlign='left'; ctx.fillText(txt,hover.x+14,hover.y-10); ctx.restore();
+}
+
 function drawOrders(){
   ctx.save();
   for(const u of units){
@@ -1202,6 +1255,11 @@ function drawOrders(){
       const okFrom=(ax,ay)=>dist(ax,ay,tx,ty)<=rng&&los(grid,smokeGrid,ax,ay,tx,ty);
       const ko=!nade&&!okFrom(u.x,u.y)&&!okFrom(ex.x,ex.y);
       if(ko) lbl=dist(ex.x,ex.y,tx,ty)>rng?'HORS DE PORTÉE':'PAS DE LIGNE DE TIR';
+      else if(u.fire.kind==='unit'){          // estimation de la chance de toucher, depuis la position de tir prévue
+        const acc=hitChance({c:u.c,d:dist(ex.x,ex.y,tx,ty),moving:false,supp:u.supp,watching:false,
+          cover:coverMul(grid,ex.x,ex.y,tx,ty),targetRunning:false});
+        lbl+=` ~${Math.round(acc*100)}%`;
+      }
       const fc=nade?'#7a5c1f':ko?'#71766D':C.red;
       ctx.strokeStyle=fc; ctx.lineWidth=on?1.8:1.2;
       ctx.setLineDash([2,6]);
@@ -1291,6 +1349,7 @@ window.addEventListener('keydown',e=>{
   if(e.key==='4') setMode('nade');
   if(e.key==='5') setMode('watch');
   if(e.key==='6') setMode('smoke');
+  if(e.key==='a'||e.key==='A') showThreat=!showThreat;   // overlay de menace
   if(e.key==='Escape'){ mode='auto'; refreshUI(); }
 });
 function cycleSel(){
@@ -1398,5 +1457,5 @@ newGame();
 requestAnimationFrame(loop);
 
 /* points d'entrée exposés pour le test de fumée headless (voir tests/smoke.test.js) */
-export { newGame, beginResolve, step, endResolve, startReplay, stepReplay };
+export { newGame, beginResolve, step, endResolve, startReplay, stepReplay, draw };
 export { units, bullets, parts, phase, turn, scoreB, scoreR, over };

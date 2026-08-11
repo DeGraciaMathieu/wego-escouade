@@ -22,6 +22,7 @@ simultanée en temps réel, 4,5 s) → `replay` → `over`. Rendu canvas 2D, auc
 | `src/rules/pathfind.js` | `findPath` (A*), `trimPath` | config, geometry, terrain |
 | `src/rules/victory.js` | `zoneControl, roundPoint, victoryOutcome, timeUpOutcome` | config, geometry |
 | `src/rules/combat.js` | `hitChance, shotAngle` | (aucun import) |
+| `src/rules/threat.js` | `threatTiles` (carte de menace : d'où un ennemi voit/tire) | config, geometry, los |
 | `src/state/mapgen.js` | `generateMap(rng)` → `{grid,indoor,rooms,zones}` | config, geometry, terrain |
 | `src/ai/plan.js` | `aiPlan(world, rng)` — pose les ordres de l'IA | config, geometry, terrain, los, cover, pathfind |
 | `src/audio/audio.js` | `sfx(type)` — synthèse WebAudio | (globals navigateur) |

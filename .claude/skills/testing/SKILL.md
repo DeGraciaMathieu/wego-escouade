@@ -42,6 +42,7 @@ pourcentage de couverture n'est pas une cible.
 | `tests/pathfind.test.js` | A* (chemin, absence de chemin), troncature au budget |
 | `tests/victory.test.js` | contrôle de zone, point du tour, conditions de fin |
 | `tests/combat.test.js` | précision (`hitChance`), angle du tir (`shotAngle`) |
+| `tests/threat.test.js` | carte de menace (portée, LOS, mur bloquant, cumul d'ennemis) |
 | `tests/mapgen.test.js` | déterminisme à graine fixe, symétrie 180°, hall, composition |
 | `tests/smoke.test.js` | **filet bout-en-bout headless** : charge le jeu (stubs DOM/canvas/audio), résout un tour, rejoue |
 
