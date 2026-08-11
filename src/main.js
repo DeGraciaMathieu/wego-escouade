@@ -680,6 +680,9 @@ function damage(u,dmg,side){
     }
     corpse(u); recEvent('death',{x:u.x,y:u.y,side:u.side});
     sfx('down');
+  } else if(u.alive){
+    bloodHit(u.x,u.y,side); shake=Math.max(shake,6);
+    recEvent('hit',{x:u.x,y:u.y,side});
   }
 }
 
@@ -693,6 +696,17 @@ function wake(b,a){
 /* éclat blanc bref au point d'impact */
 function impact(x,y,col){
   parts.push({type:'pop',x,y,vx:0,vy:0,g:0,drag:0,t:0,life:0.16,size:13,col});
+}
+
+/* gerbe brève quand un tir touche sans tuer : rend l'impact lisible (live et replay) */
+function bloodHit(x,y,side){
+  const col=side==='b'?'#DE6247':'#3E92C9';
+  impact(x,y,'#ffd9c2');
+  for(let i=0;i<9;i++){
+    const a=Math.random()*6.283,s=rnd(30,150);
+    parts.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,g:160,drag:3.5,t:0,life:rnd(.2,.45),
+      size:rnd(2,3.5),col,type:'spark'});
+  }
 }
 
 function sparks(x,y,col,n){
@@ -814,6 +828,7 @@ function stepReplay(dt){
     const e=r.ev[rp.ev++];
     if(e.k==='boom') boomFx(e.x,e.y,e.R);
     else if(e.k==='death'){ corpse({x:e.x,y:e.y,side:e.side}); sfx('down'); }
+    else if(e.k==='hit') bloodHit(e.x,e.y,e.side);
     else if(e.k==='breach') breach(e.gx,e.gy);
     else if(e.k==='smoke') sfx('smoke');
   }
@@ -1090,6 +1105,8 @@ function drawUnit(u){
   if(u.hurt>0){
     ctx.fillStyle=`rgba(255,255,255,${u.hurt*0.55})`;
     ctx.beginPath(); ctx.arc(0,0,11,0,6.283); ctx.fill();
+    ctx.strokeStyle=`rgba(220,60,50,${u.hurt})`; ctx.lineWidth=2.5;
+    ctx.beginPath(); ctx.arc(0,0,11+6*(1-u.hurt),0,6.283); ctx.stroke();
   }
   ctx.fillStyle='#fff'; ctx.font='bold 8px ui-monospace,monospace'; ctx.textAlign='center';
   ctx.fillText(u.c.tag,0,2.8); ctx.textAlign='left';
