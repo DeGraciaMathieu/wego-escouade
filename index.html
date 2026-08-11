@@ -187,6 +187,7 @@ import {
 import { createRng } from './src/rng.js';
 import { idx, inMap, inZone, inAnyZone, zoneCenter } from './src/rules/geometry.js';
 import { isWallT, tcost, tcostPx, solid, blocksSight } from './src/rules/terrain.js';
+import { coverMul, isCovered } from './src/rules/cover.js';
 
 const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
 const terrainCv=document.createElement('canvas'); terrainCv.width=W; terrainCv.height=H;
@@ -722,31 +723,6 @@ function los(ax,ay,bx,by){
   return true;
 }
 
-/* protection de la cible : multiplicateur appliqué à la précision du tireur */
-function coverMul(sx,sy,tx,ty){
-  let m=1;
-  const gx=Math.floor(tx/TILE), gy=Math.floor(ty/TILE);
-  const t=inMap(gx,gy)?grid[idx(gx,gy)]:T.OPEN;
-  if(t===T.WOOD) m=0.55;
-  else if(t===T.RUBBLE) m=0.58;
-  const d=dist(sx,sy,tx,ty);
-  if(d>12&&t!==T.WALL){                          // à cheval sur la haie, on ne s'abrite pas derrière
-    const ux=(sx-tx)/d, uy=(sy-ty)/d;
-    for(let k=16;k<=56;k+=10){
-      const cx=Math.floor((tx+ux*k)/TILE), cy=Math.floor((ty+uy*k)/TILE);
-      if(!inMap(cx,cy)||(cx===gx&&cy===gy)) continue;
-      const v=grid[idx(cx,cy)];
-      if(v===T.WALL){ m=Math.min(m,0.50); break; }
-      if(v===T.WIN){ m=Math.min(m,0.62); break; }   // embrasure : le tireur posté y est mieux loti
-    }
-  }
-  if(m===1){
-    if(t===T.WALL) m=1.28;                       // en train d'enjamber : cible offerte
-    else if(t===T.MARSH||t===T.ROAD) m=1.16;
-  }
-  return m;
-}
-const isCovered=(sx,sy,tx,ty)=>coverMul(sx,sy,tx,ty)<0.95;
 
 /* ==========================================================================
    PATHFINDING
@@ -888,7 +864,7 @@ function aiPlan(){
     if(!u.fire&&u.nades>0&&visible.length){
       for(const f of visible){
         const near=visible.filter(o=>dist(o.x,o.y,f.x,f.y)<80).length;
-        if(dist(u.x,u.y,f.x,f.y)<400&&(near>=2||isCovered(u.x,u.y,f.x,f.y))){
+        if(dist(u.x,u.y,f.x,f.y)<400&&(near>=2||isCovered(grid,u.x,u.y,f.x,f.y))){
           u.fire={kind:'nade',x:f.x+grnd(-14,14),y:f.y+grnd(-14,14)}; break;
         }
       }
@@ -899,7 +875,7 @@ function aiPlan(){
       for(const f of visible){
         const d=dist(u.x,u.y,f.x,f.y);
         let s=200-Math.abs(d-u.c.ideal)*0.35 + (f.maxHp-f.hp)*0.7;
-        if(isCovered(u.x,u.y,f.x,f.y)) s-=45;
+        if(isCovered(grid,u.x,u.y,f.x,f.y)) s-=45;
         if(f.cls==='mit') s+=25;
         if(s>bs){bs=s;best=f;}
       }
@@ -932,7 +908,7 @@ function aiPlan(){
       const d=dist(px,py,anchor.x,anchor.y);
       let s=-Math.abs(d-u.c.ideal*0.85)*0.4;
       if(los(px,py,anchor.x,anchor.y)) s+=90; else s-=40;
-      if(isCovered(anchor.x,anchor.y,px,py)) s+=110;
+      if(isCovered(grid,anchor.x,anchor.y,px,py)) s+=110;
       const tt=grid[idx(gx,gy)];                       // l'IA lit le terrain
       if(tt===T.RUBBLE) s+=70; else if(tt===T.WOOD) s+=55;
       else if(tt===T.MARSH) s-=110; else if(tt===T.WALL) s-=150; else if(tt===T.ROAD) s-=25;
@@ -1068,7 +1044,7 @@ function step(dt){
       if(u.moving) acc*=u.c.movePen;
       if(u.supp>50) acc*=0.5;
       if(watching&&!u.moving) acc*=1.2;             // posté, l'arme déjà en position
-      if(tgt){ acc*=coverMul(u.x,u.y,tgt.x,tgt.y); if(tgt.mv&&tgt.mv.run&&tgt.moving) acc*=1.2; }
+      if(tgt){ acc*=coverMul(grid,u.x,u.y,tgt.x,tgt.y); if(tgt.mv&&tgt.mv.run&&tgt.moving) acc*=1.2; }
       const hit=!!tgt&&rng()<acc;
       fire(u,tx,ty,hit,tgt);
     }
