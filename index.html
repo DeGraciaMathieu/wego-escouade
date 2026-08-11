@@ -189,6 +189,7 @@ import { idx, inMap, inZone, inAnyZone, zoneCenter } from './src/rules/geometry.
 import { isWallT, tcost, tcostPx, solid, blocksSight } from './src/rules/terrain.js';
 import { coverMul, isCovered } from './src/rules/cover.js';
 import { los } from './src/rules/los.js';
+import { findPath, trimPath } from './src/rules/pathfind.js';
 
 const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
 const terrainCv=document.createElement('canvas'); terrainCv.width=W; terrainCv.height=H;
@@ -710,51 +711,6 @@ function breach(gx,gy){
 /* ==========================================================================
    PATHFINDING
    ========================================================================== */
-function findPath(sx,sy,tx,ty){
-  const s=idx(sx,sy), t=idx(tx,ty);
-  if(solid(grid,tx,ty)) return null;
-  if(s===t) return [];
-  const g=new Float32Array(COLS*ROWS).fill(1e9), came=new Int32Array(COLS*ROWS).fill(-1);
-  const open=[s]; g[s]=0;
-  const hf=i=>Math.hypot(i%COLS-tx,(i/COLS|0)-ty);
-  const f=new Float32Array(COLS*ROWS).fill(1e9); f[s]=hf(s);
-  const closed=new Uint8Array(COLS*ROWS);
-  let guard=0;
-  while(open.length&&guard++<4000){
-    let bi=0; for(let i=1;i<open.length;i++) if(f[open[i]]<f[open[bi]]) bi=i;
-    const cur=open.splice(bi,1)[0];
-    if(cur===t) break;
-    closed[cur]=1;
-    const cx=cur%COLS, cy=cur/COLS|0;
-    for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
-      if(!dx&&!dy) continue;
-      const nx=cx+dx, ny=cy+dy;
-      if(!inMap(nx,ny)||solid(grid,nx,ny)) continue;
-      if(dx&&dy&&(solid(grid,cx+dx,cy)||solid(grid,cx,cy+dy))) continue; // pas de diagonale entre deux blocs
-      const n=idx(nx,ny); if(closed[n]) continue;
-      const ng=g[cur]+(dx&&dy?1.414:1)*tcost(grid,nx,ny);
-      if(ng<g[n]){ g[n]=ng; came[n]=cur; f[n]=ng+hf(n)*ASTAR_HEURISTIC; if(!open.includes(n)) open.push(n); }
-    }
-  }
-  if(came[t]===-1&&t!==s) return null;
-  const out=[]; let c=t;
-  while(c!==s&&c!==-1){ out.push({x:(c%COLS)*TILE+TILE/2,y:(c/COLS|0)*TILE+TILE/2}); c=came[c]; }
-  return out.reverse();
-}
-/* tronque un chemin au budget de déplacement — le terrain fait varier ce que coûte un mètre */
-function trimPath(x,y,path,budget){
-  const out=[]; let px=x, py=y, len=0;
-  for(const p of path){
-    const d=dist(px,py,p.x,p.y), c=d*tcostPx(grid,(px+p.x)/2,(py+p.y)/2);
-    if(len+c>budget){
-      const r=(budget-len)/c;
-      if(r>0.05) out.push({x:px+(p.x-px)*r,y:py+(p.y-py)*r});
-      len=budget; break;
-    }
-    out.push(p); len+=c; px=p.x; py=p.y;
-  }
-  return {pts:out,len};
-}
 
 /* ==========================================================================
    UNITÉS
@@ -795,9 +751,9 @@ function updateVision(){
    ========================================================================== */
 function orderMove(u,mx,my,run){
   const gx=clamp(Math.floor(mx/TILE),0,COLS-1), gy=clamp(Math.floor(my/TILE),0,ROWS-1);
-  const p=findPath(Math.floor(u.x/TILE),Math.floor(u.y/TILE),gx,gy);
+  const p=findPath(grid,Math.floor(u.x/TILE),Math.floor(u.y/TILE),gx,gy);
   if(!p){ sfx('deny'); return; }
-  const t=trimPath(u.x,u.y,p,u.c.move*(run?RUN:1));
+  const t=trimPath(grid,u.x,u.y,p,u.c.move*(run?RUN:1));
   if(!t.pts.length){ u.mv=null; return; }
   u.mv={pts:t.pts,i:0,run:!!run,raw:p};
   if(run) u.fire=null;                       // on court, on ne tire pas
@@ -806,7 +762,7 @@ function orderMove(u,mx,my,run){
 /* poser un ordre de tir sur une unité lancée : elle repasse au pas */
 function walkAgain(u){
   if(!u.mv||!u.mv.run) return;
-  const t=trimPath(u.x,u.y,u.mv.raw,u.c.move);
+  const t=trimPath(grid,u.x,u.y,u.mv.raw,u.c.move);
   u.mv=t.pts.length?{pts:t.pts,i:0,run:false,raw:u.mv.raw}:null;
 }
 function orderFireUnit(u,target){ walkAgain(u); u.fire={kind:'unit',id:target.id}; sfx('pen'); }
@@ -903,10 +859,10 @@ function aiPlan(){
       if(s>bs){bs=s;bestP={gx,gy};}
     }
     if(bestP){
-      const p=findPath(gx0,gy0,bestP.gx,bestP.gy);
+      const p=findPath(grid,gx0,gy0,bestP.gx,bestP.gy);
       const run=u.wantRun;
       if(p&&p.length){
-        const t=trimPath(u.x,u.y,p,u.c.move*(run?RUN:1));
+        const t=trimPath(grid,u.x,u.y,p,u.c.move*(run?RUN:1));
         if(t.pts.length){ u.mv={pts:t.pts,i:0,run,raw:p}; if(run) u.fire=null; }
       }
     }
@@ -1865,8 +1821,8 @@ cv.addEventListener('mousemove',e=>{
   const p=mapPos(e); hover=p;
   if(phase==='plan'&&sel&&sel.alive&&(mode==='auto'||mode==='move'||mode==='run')){
     const gx=clamp(Math.floor(p.x/TILE),0,COLS-1), gy=clamp(Math.floor(p.y/TILE),0,ROWS-1);
-    const raw=findPath(Math.floor(sel.x/TILE),Math.floor(sel.y/TILE),gx,gy);
-    hoverPath=raw?trimPath(sel.x,sel.y,raw,sel.c.move*(mode==='run'?RUN:1)).pts:null;
+    const raw=findPath(grid,Math.floor(sel.x/TILE),Math.floor(sel.y/TILE),gx,gy);
+    hoverPath=raw?trimPath(grid,sel.x,sel.y,raw,sel.c.move*(mode==='run'?RUN:1)).pts:null;
   } else hoverPath=null;
 });
 cv.addEventListener('mouseleave',()=>{ hover={x:-999,y:-999}; hoverPath=null; });
