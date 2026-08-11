@@ -190,6 +190,7 @@ import { isWallT, tcost, tcostPx, solid, blocksSight } from './src/rules/terrain
 import { coverMul, isCovered } from './src/rules/cover.js';
 import { los } from './src/rules/los.js';
 import { findPath, trimPath } from './src/rules/pathfind.js';
+import { zoneControl, roundPoint, victoryOutcome, timeUpOutcome } from './src/rules/victory.js';
 
 const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
 const terrainCv=document.createElement('canvas'); terrainCv.width=W; terrainCv.height=H;
@@ -1205,21 +1206,15 @@ function endResolve(){
   for(let i=smokes.length-1;i>=0;i--){ if(--smokes[i].turns<=0) smokes.splice(i,1); }
   rebuildSmoke();
   // décompte : on tient une zone si l'on y est plus nombreux ; le point va à qui en tient le plus
-  const cnt=(z,s)=>alive(s).filter(u=>inZone(z,Math.floor(u.x/TILE),Math.floor(u.y/TILE))).length;
-  let zb=0, zr=0;
-  for(const z of zones){
-    const b2=cnt(z,'b'), r2=cnt(z,'r');
-    z.held=b2>r2?'b':r2>b2?'r':null;
-    if(z.held==='b') zb++; else if(z.held==='r') zr++;
-  }
-  if(zb>zr) scoreB++; else if(zr>zb) scoreR++;
+  const {holders,zb,zr}=zoneControl(zones,units);
+  zones.forEach((z,i)=>z.held=holders[i]);
+  const pt=roundPoint(zb,zr);
+  if(pt==='b') scoreB++; else if(pt==='r') scoreR++;
 
-  if(!alive('r').length) return finish('Objectif atteint','Escouade adverse neutralisée');
-  if(!alive('b').length) return finish('Escouade perdue','Plus aucune unité en état de combattre');
-  if(scoreB>=WINPTS) return finish('Objectifs tenus','Contrôle des zones assuré');
-  if(scoreR>=WINPTS) return finish('Objectifs perdus','L\'ennemi contrôle les zones');
+  const outcome=victoryOutcome({aliveR:alive('r').length,aliveB:alive('b').length,scoreB,scoreR});
+  if(outcome) return finish(outcome.title,outcome.sub);
   turn++;
-  if(turn>MAXTURN) return finish(scoreB>scoreR?'Victoire aux points':scoreB<scoreR?'Défaite aux points':'Match nul','Fin du temps imparti');
+  if(turn>MAXTURN){ const o=timeUpOutcome(scoreB,scoreR); return finish(o.title,o.sub); }
   phase='plan'; sel=alive('b')[0]||null; mode='auto'; refreshUI();
 }
 function finish(t,s){
