@@ -165,7 +165,7 @@
   </div>
 </div>
 
-<script>
+<script type="module">
 "use strict";
 /* ==========================================================================
    ESCOUADE — jeu de stratégie WEGO à échelle réduite
@@ -173,9 +173,17 @@
    puis résolus simultanément pendant 4,5 s de temps réel.
    ========================================================================== */
 
-const W=1200,H=680,TILE=40,COLS=30,ROWS=17;
-const RESOLVE=4.5;                 // durée d'une résolution, en secondes
-const MAXTURN=12, WINPTS=5;
+import {
+  W, H, TILE, COLS, ROWS, RESOLVE, MAXTURN, WINPTS, DT_MAX, SUBSTEP,
+  C, T, TI, TC, CLS, ROSTER, HALLZ,
+  VIEW, RUN, NOISE_R, NOISE_EVERY, WATCH_CONE, WATCH_DELAY,
+  ASTAR_HEURISTIC, MOVE_SUPP_PENALTY, SUPP_DECAY, SUPP_ENDTURN_MULT,
+  BULLET_SUPP_R, BULLET_IMPACT_R,
+  EXPLOSION_R, EXPLOSION_SUPP_R_MULT, NADE_RANGE, NADE_ARC_DUR,
+  SMOKE_R, SMOKE_TURNS, SMOKE_RANGE,
+  MAP_ATTEMPTS, MAP_PASS_MIN, MAP_FLOOR_MIN, MAP_REACH_MIN,
+  REC_HZ, UF, BF,
+} from './src/config.js';
 
 const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
 const terrainCv=document.createElement('canvas'); terrainCv.width=W; terrainCv.height=H;
@@ -183,28 +191,6 @@ const tctx=terrainCv.getContext('2d');
 const decalCv=document.createElement('canvas'); decalCv.width=W; decalCv.height=H;
 const dctx=decalCv.getContext('2d');
 
-const C={paper:'#E4E0D2',open:'#DCD8C8',wall:'#4A4E47',wallTop:'#5C6058',cover:'#A79E86',
-  grid:'rgba(40,50,40,.09)',blue:'#1D4E6E',blueL:'#3E92C9',red:'#A8322A',redL:'#DE6247',
-  gold:'#C9A227',ink:'#2a2f28'};
-
-/* ---------- natures de terrain ----------
-   chaque nature pèse sur une variable différente : vitesse, vue, protection. */
-const T={OPEN:0,BLD:1,WALL:2,WOOD:3,MARSH:4,ROAD:5,RUBBLE:6,FLOOR:7,WIN:8,PART:9};
-const TI={
-  0:{n:'Extérieur',        d:'à découvert, rien pour s\'abriter',      cost:1,   pass:true },
-  1:{n:'Mur porteur',      d:'infranchissable, il faut beaucoup pour l\'ouvrir',cost:0,  pass:false},
-  2:{n:'Mobilier bas',     d:'table, comptoir : on l\'escalade, on s\'abrite derrière',cost:3,pass:true },
-  3:{n:'Mobilier haut',    d:'armoires, rayonnages : masque la vue',    cost:1.7, pass:true },
-  4:{n:'Plancher effondré',d:'très lent, aucune protection',            cost:2.4, pass:true },
-  5:{n:'Rue',              d:'rapide, mais totalement exposé',          cost:0.62,pass:true },
-  6:{n:'Gravats',          d:'protège qui s\'y tient, ralentit',        cost:1.45,pass:true },
-  7:{n:'Pièce',            d:'sol dégagé, à l\'intérieur',              cost:1,   pass:true },
-  8:{n:'Fenêtre',          d:'on voit et on tire au travers ; s\'y poster protège un peu',cost:0,pass:false},
-  9:{n:'Cloison',          d:'infranchissable, mais une grenade la perce sans peine',cost:0,pass:false},
-};
-const TC={part:'#7E8478',road:'#D6CAA6',roadEdge:'#B8AB86',floor:'#F1ECE1',floorLine:'#DED3BE',
-  furn:'#C7BCA2',furnEdge:'#7E7462',clut:'#A3977C',clutEdge:'#6E6552',
-  broke:'#B3A78F',brokeDark:'#7E7460',rubble:'#C6BA9E',rubbleDark:'#8A806C',win:'#A9D2DD'};
 const tcost=(x,y)=>inMap(x,y)?(TI[grid[idx(x,y)]].cost||1):1;
 const tcostPx=(px,py)=>tcost(Math.floor(px/TILE),Math.floor(py/TILE));
 
@@ -216,22 +202,12 @@ const dist=(a,b,c,d)=>Math.hypot(a-c,b-d);
 const idx=(x,y)=>y*COLS+x;
 const inMap=(x,y)=>x>=0&&y>=0&&x<COLS&&y<ROWS;
 
-/* ---------- classes d'unité ---------- */
-const CLS={
-  ecl:{name:'Éclaireur',tag:'ÉCL',hp:70, move:270, dmg:9,  cd:0.10, ideal:150, fall:200, acc:0.56, supp:3, movePen:0.55, spread:0.055},
-  fus:{name:'Fusilier', tag:'FUS',hp:90, move:210, dmg:20, cd:0.60, ideal:330, fall:370, acc:0.70, supp:6, movePen:0.45, spread:0.02},
-  mit:{name:'Mitrailleur',tag:'MIT',hp:100,move:145, dmg:11, cd:0.13, ideal:300, fall:300, acc:0.32, supp:9, movePen:0.22, spread:0.05},
-  gre:{name:'Grenadier',tag:'GRE',hp:85, move:200, dmg:15, cd:0.45, ideal:230, fall:260, acc:0.56, supp:5, movePen:0.45, spread:0.03, nades:2},
-};
-const ROSTER=['ecl','fus','mit','gre'];
-
 /* ---------- état ---------- */
 let grid, indoor, rooms, units, bullets, parts, nades, smokes, smokeGrid;
 let turn, phase, rt, shake, hitstop, scoreB, scoreR, over;
 let sel=null, mode='auto', hover={x:-999,y:-999}, hoverPath=null, speed=1;
 let mem={};           // mémoire du joueur : dernière position connue des ennemis
 let aiMem={};         // mémoire de l'IA
-const HALLZ={x0:12,y0:6,x1:17,y1:10};   // le hall, toujours en jeu
 let zones=[];                           // zones de contrôle du tirage courant
 const inZone=(z,x,y)=>x>=z.x0&&x<=z.x1&&y>=z.y0&&y<=z.y1;
 const inAnyZone=(x,y)=>zones.some(z=>inZone(z,x,y));
@@ -241,7 +217,7 @@ const zoneCenter=z=>({x:(z.x0+z.x1+1)/2*TILE,y:(z.y0+z.y1+1)/2*TILE});
    CARTE
    ========================================================================== */
 function genMap(){
-  for(let attempt=0;attempt<40;attempt++){ buildMap(); if(mapValid()) break; }
+  for(let attempt=0;attempt<MAP_ATTEMPTS;attempt++){ buildMap(); if(mapValid()) break; }
   mapSeed=(Math.random()*4294967296)>>>0;
   drawTerrain();
 }
@@ -491,7 +467,7 @@ function mapValid(){
   }
   // toutes les pièces doivent être atteignables, sinon la maison a une poche morte
   let ins=0; for(let i=0;i<grid.length;i++) if(indoor[i]&&TI[grid[i]].pass) ins++;
-  return pass>grid.length*0.5 && floor>grid.length*0.26 && reach>ins*0.94;
+  return pass>grid.length*MAP_PASS_MIN && floor>grid.length*MAP_FLOOR_MIN && reach>ins*MAP_REACH_MIN;
 }
 
 /* ==========================================================================
@@ -804,7 +780,7 @@ function findPath(sx,sy,tx,ty){
       if(dx&&dy&&(solid(cx+dx,cy)||solid(cx,cy+dy))) continue; // pas de diagonale entre deux blocs
       const n=idx(nx,ny); if(closed[n]) continue;
       const ng=g[cur]+(dx&&dy?1.414:1)*tcost(nx,ny);
-      if(ng<g[n]){ g[n]=ng; came[n]=cur; f[n]=ng+hf(n)*0.62; if(!open.includes(n)) open.push(n); }
+      if(ng<g[n]){ g[n]=ng; came[n]=cur; f[n]=ng+hf(n)*ASTAR_HEURISTIC; if(!open.includes(n)) open.push(n); }
     }
   }
   if(came[t]===-1&&t!==s) return null;
@@ -848,10 +824,7 @@ function setupUnits(){
 const alive=s=>units.filter(u=>u.alive&&u.side===s);
 const byId=i=>units.find(u=>u.id===i);
 
-/* visibilité : une unité voit à 580 px avec ligne de vue */
-const VIEW=580;
-const RUN=1.7, NOISE_R=300, NOISE_EVERY=0.45;   // course : portée et cadence du bruit
-const WATCH_CONE=0.35, WATCH_DELAY=0.22;   // demi-angle du cône de guet (~40° d'ouverture) et délai de réaction
+/* visibilité : une unité voit à VIEW px avec ligne de vue */
 function updateVision(){
   for(const u of units){
     if(u.side==='r'){
@@ -893,12 +866,12 @@ function orderWatch(u,x,y){
 }
 function orderSmoke(u,x,y){
   if(u.smoke<=0){ sfx('deny'); return; }
-  if(dist(u.x,u.y,x,y)>380){ sfx('deny'); return; }
+  if(dist(u.x,u.y,x,y)>SMOKE_RANGE){ sfx('deny'); return; }
   walkAgain(u); u.fire={kind:'smoke',x,y}; sfx('pen');
 }
 function orderNade(u,x,y){
   if(u.nades<=0){ sfx('deny'); return; }
-  if(dist(u.x,u.y,x,y)>420){ sfx('deny'); return; }
+  if(dist(u.x,u.y,x,y)>NADE_RANGE){ sfx('deny'); return; }
   walkAgain(u); u.fire={kind:'nade',x,y}; sfx('pen');
 }
 
@@ -1017,7 +990,7 @@ function step(dt){
   for(const u of units){
     if(!u.alive||!u.mv) continue;
     const ox=u.x, oy=u.y;
-    let sp=u.c.move*(u.mv.run?RUN:1)/RESOLVE*(u.supp>50?0.72:1)/tcostPx(u.x,u.y);
+    let sp=u.c.move*(u.mv.run?RUN:1)/RESOLVE*(u.supp>50?MOVE_SUPP_PENALTY:1)/tcostPx(u.x,u.y);
     let budget=sp*dt;
     while(budget>0&&u.mv&&u.mv.i<u.mv.pts.length){
       const p=u.mv.pts[u.mv.i], d=dist(u.x,u.y,p.x,p.y);
@@ -1126,8 +1099,8 @@ function step(dt){
     for(const u of units){
       if(!u.alive||u.side===b.side) continue;
       const dd=dist(u.x,u.y,nx,ny);
-      if(dd<44) u.supp=Math.min(100,u.supp+b.supp*dt*8);
-      if(b.hit&&b.tid===u.id&&dd<13){
+      if(dd<BULLET_SUPP_R) u.supp=Math.min(100,u.supp+b.supp*dt*8);
+      if(b.hit&&b.tid===u.id&&dd<BULLET_IMPACT_R){
         damage(u,b.dmg,b.side); u.supp=Math.min(100,u.supp+b.supp*2.2);
         wake(b,.55); impact(nx,ny,'#ff5f3a'); sparks(nx,ny,'#c0392b',9); shake=Math.max(shake,3);
         bullets.splice(i,1); b.dead=true; break;
@@ -1154,7 +1127,7 @@ function step(dt){
 
   // --- décrue de la suppression ---
   while(curRec&&!replaying&&curRec.frames.length<Math.min(rt,RESOLVE)*REC_HZ) recFrame();
-  for(const u of units) if(u.alive) u.supp=Math.max(0,u.supp-14*dt);
+  for(const u of units) if(u.alive) u.supp=Math.max(0,u.supp-SUPP_DECAY*dt);
   shake=Math.max(0,shake-40*dt);
   for(const u of units){ u.flash=Math.max(0,u.flash-dt*7); u.hurt=Math.max(0,u.hurt-dt*4); }
   updateVision();
@@ -1203,14 +1176,14 @@ function fire(u,tx,ty,hit,tgt){
 }
 
 function throwNade(u,x,y,smoke){
-  nades.push({sx:u.x,sy:u.y,tx:x,ty:y,x:u.x,y:u.y,z:0,t:0,dur:1.0,side:u.side,smoke:!!smoke});
+  nades.push({sx:u.x,sy:u.y,tx:x,ty:y,x:u.x,y:u.y,z:0,t:0,dur:NADE_ARC_DUR,side:u.side,smoke:!!smoke});
   if(smoke) u.smoke--; else u.nades--;
   sfx('throw');
 }
 
 /* --- fumigène : un volume qui coupe la vue sans gêner le passage --- */
 function popSmoke(x,y){
-  smokes.push({x,y,r:80,t:0,turns:3});
+  smokes.push({x,y,r:SMOKE_R,t:0,turns:SMOKE_TURNS});
   rebuildSmoke(); recEvent('smoke',{x,y});
   for(let i=0;i<30;i++){
     const a=Math.random()*6.283, s=rnd(20,120);
@@ -1227,7 +1200,7 @@ function rebuildSmoke(){
 }
 
 function explode(x,y,side){
-  const R=95;
+  const R=EXPLOSION_R;
   for(const u of units){
     if(!u.alive) continue;
     const d=dist(u.x,u.y,x,y);
@@ -1235,7 +1208,7 @@ function explode(x,y,side){
       const f=1-d/R;
       damage(u,Math.round(18+52*f*f),side);
       u.supp=Math.min(100,u.supp+70*f);
-    } else if(d<R*1.8) u.supp=Math.min(100,u.supp+25);
+    } else if(d<R*EXPLOSION_SUPP_R_MULT) u.supp=Math.min(100,u.supp+25);
   }
   boomFx(x,y,R); recEvent('boom',{x,y,R});
   // brèche : les cloisons proches cèdent
@@ -1319,7 +1292,7 @@ function decal(x,y,r,col){
 /* fin de résolution */
 function endResolve(){
   bullets.length=0; nades.length=0;
-  for(const u of units){ u.mv=null; if(u.fire&&u.fire.kind==='nade') u.fire=null; u.fire=null; u.supp*=0.45; }
+  for(const u of units){ u.mv=null; if(u.fire&&u.fire.kind==='nade') u.fire=null; u.fire=null; u.supp*=SUPP_ENDTURN_MULT; }
   for(let i=smokes.length-1;i>=0;i--){ if(--smokes[i].turns<=0) smokes.splice(i,1); }
   rebuildSmoke();
   // décompte : on tient une zone si l'on y est plus nombreux ; le point va à qui en tient le plus
@@ -1355,7 +1328,6 @@ function finish(t,s){
    ponctuels, et on repasse la bande. Fidélité exacte, aucun besoin de
    rendre le tir et l'IA déterministes.
    ========================================================================== */
-const REC_HZ=60, UF=7, BF=7;
 let rec=[], curRec=null, replaying=false, rp=null, preRep=null;
 
 function recEvent(k,d){ if(curRec&&!replaying) curRec.ev.push(Object.assign({t:rt,k},d)); }
@@ -2066,7 +2038,7 @@ function newGame(){
 
 let last=performance.now();
 function loop(now){
-  let dt=Math.min(0.05,(now-last)/1000); last=now;
+  let dt=Math.min(DT_MAX,(now-last)/1000); last=now;
   if(phase==='replay'){
     if(hitstop>0) hitstop-=dt; else stepReplay(dt);
   } else if(phase==='resolve'){
@@ -2074,7 +2046,7 @@ function loop(now){
     else{
       const sub=dt*speed;
       let rem=sub;
-      while(rem>0){ const s=Math.min(1/120,rem); step(s); rem-=s; if(hitstop>0) break; }
+      while(rem>0){ const s=Math.min(SUBSTEP,rem); step(s); rem-=s; if(hitstop>0) break; }
       if(rt>=RESOLVE){ endResolve(); }
     }
   } else {
