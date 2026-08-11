@@ -186,15 +186,13 @@ import {
 } from './src/config.js';
 import { createRng } from './src/rng.js';
 import { idx, inMap, inZone, inAnyZone, zoneCenter } from './src/rules/geometry.js';
+import { isWallT, tcost, tcostPx, solid, blocksSight } from './src/rules/terrain.js';
 
 const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
 const terrainCv=document.createElement('canvas'); terrainCv.width=W; terrainCv.height=H;
 const tctx=terrainCv.getContext('2d');
 const decalCv=document.createElement('canvas'); decalCv.width=W; decalCv.height=H;
 const dctx=decalCv.getContext('2d');
-
-const tcost=(x,y)=>inMap(x,y)?(TI[grid[idx(x,y)]].cost||1):1;
-const tcostPx=(px,py)=>tcost(Math.floor(px/TILE),Math.floor(py/TILE));
 
 /* ---------- utilitaires ---------- */
 const rnd=(a,b)=>a+Math.random()*(b-a);           // aléa cosmétique (particules, écran, textures)
@@ -227,7 +225,6 @@ function genMap(){
        5 les portes, posées par arbre couvrant puis bouclées ·
        6 les pièces typées et meublées · 7 fenêtres, dégâts, rue et cour.
        Tout est composé sur la moitié gauche, puis retourné à 180°. --- */
-const isWallT=v=>v===T.BLD||v===T.PART;
 
 function buildMap(){
   grid=new Uint8Array(COLS*ROWS);
@@ -439,13 +436,13 @@ function buildMap(){
 function mapValid(){
   const seen=new Uint8Array(COLS*ROWS);
   const start=idx(1,ROWS>>1);
-  if(solid(1,ROWS>>1)) return false;
+  if(solid(grid,1,ROWS>>1)) return false;
   const q=[start]; seen[start]=1;
   while(q.length){
     const c=q.pop(), x=c%COLS, y=c/COLS|0;
     for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
       const nx=x+dx, ny=y+dy;
-      if(!inMap(nx,ny)||solid(nx,ny)) continue;
+      if(!inMap(nx,ny)||solid(grid,nx,ny)) continue;
       const n=idx(nx,ny); if(seen[n]) continue;
       seen[n]=1; q.push(n);
     }
@@ -705,8 +702,6 @@ function breach(gx,gy){
   }
 }
 
-const solid=(x,y)=>!inMap(x,y)||!TI[grid[idx(x,y)]].pass;
-const blocksSight=(x,y)=>!inMap(x,y)||isWallT(grid[idx(x,y)]);
 
 /* ligne de vue : les bâtiments coupent net, le bois masque à partir de deux tuiles */
 function los(ax,ay,bx,by){
@@ -721,7 +716,7 @@ function los(ax,ay,bx,by){
     if(e2>-dy){err-=dy;x0+=sx;}
     if(e2<dx){err+=dx;y0+=sy;}
     if(x0===x1&&y0===y1) return true;
-    if(blocksSight(x0,y0)) return false;
+    if(blocksSight(grid,x0,y0)) return false;
     if(inMap(x0,y0)&&(grid[idx(x0,y0)]===T.WOOD||smokeGrid[idx(x0,y0)])&&++wood>=2) return false;
   }
   return true;
@@ -758,7 +753,7 @@ const isCovered=(sx,sy,tx,ty)=>coverMul(sx,sy,tx,ty)<0.95;
    ========================================================================== */
 function findPath(sx,sy,tx,ty){
   const s=idx(sx,sy), t=idx(tx,ty);
-  if(solid(tx,ty)) return null;
+  if(solid(grid,tx,ty)) return null;
   if(s===t) return [];
   const g=new Float32Array(COLS*ROWS).fill(1e9), came=new Int32Array(COLS*ROWS).fill(-1);
   const open=[s]; g[s]=0;
@@ -775,10 +770,10 @@ function findPath(sx,sy,tx,ty){
     for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
       if(!dx&&!dy) continue;
       const nx=cx+dx, ny=cy+dy;
-      if(!inMap(nx,ny)||solid(nx,ny)) continue;
-      if(dx&&dy&&(solid(cx+dx,cy)||solid(cx,cy+dy))) continue; // pas de diagonale entre deux blocs
+      if(!inMap(nx,ny)||solid(grid,nx,ny)) continue;
+      if(dx&&dy&&(solid(grid,cx+dx,cy)||solid(grid,cx,cy+dy))) continue; // pas de diagonale entre deux blocs
       const n=idx(nx,ny); if(closed[n]) continue;
-      const ng=g[cur]+(dx&&dy?1.414:1)*tcost(nx,ny);
+      const ng=g[cur]+(dx&&dy?1.414:1)*tcost(grid,nx,ny);
       if(ng<g[n]){ g[n]=ng; came[n]=cur; f[n]=ng+hf(n)*ASTAR_HEURISTIC; if(!open.includes(n)) open.push(n); }
     }
   }
@@ -791,7 +786,7 @@ function findPath(sx,sy,tx,ty){
 function trimPath(x,y,path,budget){
   const out=[]; let px=x, py=y, len=0;
   for(const p of path){
-    const d=dist(px,py,p.x,p.y), c=d*tcostPx((px+p.x)/2,(py+p.y)/2);
+    const d=dist(px,py,p.x,p.y), c=d*tcostPx(grid,(px+p.x)/2,(py+p.y)/2);
     if(len+c>budget){
       const r=(budget-len)/c;
       if(r>0.05) out.push({x:px+(p.x-px)*r,y:py+(p.y-py)*r});
@@ -931,7 +926,7 @@ function aiPlan(){
     const R=Math.ceil(u.c.move/TILE);
     for(let n=0;n<64;n++){
       const gx=clamp(gx0+rint(-R,R),0,COLS-1), gy=clamp(gy0+rint(-R,R),0,ROWS-1);
-      if(solid(gx,gy)) continue;
+      if(solid(grid,gx,gy)) continue;
       const px=gx*TILE+TILE/2, py=gy*TILE+TILE/2;
       if(dist(u.x,u.y,px,py)>u.c.move*(u.wantRun?RUN:1)*1.1) continue;
       const d=dist(px,py,anchor.x,anchor.y);
@@ -989,7 +984,7 @@ function step(dt){
   for(const u of units){
     if(!u.alive||!u.mv) continue;
     const ox=u.x, oy=u.y;
-    let sp=u.c.move*(u.mv.run?RUN:1)/RESOLVE*(u.supp>50?MOVE_SUPP_PENALTY:1)/tcostPx(u.x,u.y);
+    let sp=u.c.move*(u.mv.run?RUN:1)/RESOLVE*(u.supp>50?MOVE_SUPP_PENALTY:1)/tcostPx(grid,u.x,u.y);
     let budget=sp*dt;
     while(budget>0&&u.mv&&u.mv.i<u.mv.pts.length){
       const p=u.mv.pts[u.mv.i], d=dist(u.x,u.y,p.x,p.y);
@@ -1738,7 +1733,7 @@ function drawCrossings(sx,sy,pts,alpha){
   let px=sx, py=sy;
   ctx.save(); ctx.globalAlpha=alpha; ctx.lineCap='round';
   for(const p of pts){
-    const c=tcostPx(p.x,p.y);
+    const c=tcostPx(grid,p.x,p.y);
     if(c>=2){
       const a=Math.atan2(p.y-py,p.x-px);
       ctx.strokeStyle=c>=3?'#A9761A':'#5E8378';
