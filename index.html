@@ -184,6 +184,7 @@ import {
   MAP_ATTEMPTS, MAP_PASS_MIN, MAP_FLOOR_MIN, MAP_REACH_MIN,
   REC_HZ, UF, BF,
 } from './src/config.js';
+import { createRng } from './src/rng.js';
 
 const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
 const terrainCv=document.createElement('canvas'); terrainCv.width=W; terrainCv.height=H;
@@ -195,8 +196,10 @@ const tcost=(x,y)=>inMap(x,y)?(TI[grid[idx(x,y)]].cost||1):1;
 const tcostPx=(px,py)=>tcost(Math.floor(px/TILE),Math.floor(py/TILE));
 
 /* ---------- utilitaires ---------- */
-const rnd=(a,b)=>a+Math.random()*(b-a);
-const rint=(a,b)=>Math.floor(rnd(a,b+1));
+const rnd=(a,b)=>a+Math.random()*(b-a);           // aléa cosmétique (particules, écran, textures)
+let rng=createRng(1);                             // aléa de jeu, seedé — réamorcé à chaque partie
+const grnd=(a,b)=>a+rng()*(b-a);                  // flottant de jeu
+const rint=(a,b)=>Math.floor(grnd(a,b+1));        // entier de jeu (buildMap, IA) — seedé
 const clamp=(v,a,b)=>v<a?a:v>b?b:v;
 const dist=(a,b,c,d)=>Math.hypot(a-c,b-d);
 const idx=(x,y)=>y*COLS+x;
@@ -244,13 +247,13 @@ function buildMap(){
     if(inMap(x,y)&&x<HALF){ grid[idx(x,y)]=T.FLOOR; indoor[idx(x,y)]=1; } };
   fill(bx0,by0,HALF-1,by1);
   let aile=null;
-  if(Math.random()<0.65){                       // aile en avancée sur la cour
+  if(rng()<0.65){                       // aile en avancée sur la cour
     const h=rint(3,5), y=rint(by0+1,by1-h), w=rint(2,3);
     aile=[Math.max(2,bx0-w),y,bx0-1,y+h-1];
     fill(aile[0],aile[1],aile[2],aile[3]);
   }
   let patio=null;
-  if(Math.random()<0.55){                       // patio à ciel ouvert
+  if(rng()<0.55){                       // patio à ciel ouvert
     const w=rint(2,3), h=rint(2,3);
     const x=rint(bx0+2,HALLX-2-w), y=rint(by0+2,by1-2-h);
     patio=[x,y,x+w-1,y+h-1];
@@ -277,7 +280,7 @@ function buildMap(){
   const split=(x0,y0,x1,y1,d)=>{
     const w=x1-x0+1, h=y1-y0+1;
     const canV=w>=5, canH=h>=5;
-    if(d>=4||(!canV&&!canH)||(w<=6&&h<=6&&Math.random()<0.22)) return;
+    if(d>=4||(!canV&&!canH)||(w<=6&&h<=6&&rng()<0.22)) return;
     if(canV&&(!canH||w>=h)){ const c=rint(x0+2,x1-2); wallCol(c,y0,y1);
       split(x0,y0,c-1,y1,d+1); split(c+1,y0,x1,y1,d+1); }
     else { const r=rint(y0+2,y1-2); wallRow(r,x0,x1);
@@ -323,16 +326,16 @@ function buildMap(){
       doors.push({x,y,a,b,ext:at(x,y)===T.BLD});
     }
   }
-  doors.sort(()=>Math.random()-.5);
+  doors.sort(()=>rng()-.5);
   doors.sort((p,q)=>(p.ext?1:0)-(q.ext?1:0));   // on perce les cloisons avant les murs porteurs
   const extra=[];
   for(const d of doors){
     if(uni(d.a,d.b)) put(d.x,d.y,T.FLOOR); else extra.push(d);
   }
-  for(const d of extra) if(!d.ext&&Math.random()<0.07) put(d.x,d.y,T.FLOOR);   // quelques boucles
+  for(const d of extra) if(!d.ext&&rng()<0.07) put(d.x,d.y,T.FLOOR);   // quelques boucles
   for(const d of doors)                                                        // quelques baies larges
-    if(at(d.x,d.y)===T.FLOOR&&!d.ext&&Math.random()<0.14){
-      const [ox,oy]=Math.random()<.5?[0,1]:[1,0];
+    if(at(d.x,d.y)===T.FLOOR&&!d.ext&&rng()<0.14){
+      const [ox,oy]=rng()<.5?[0,1]:[1,0];
       if(at(d.x+ox,d.y+oy)===T.PART) put(d.x+ox,d.y+oy,T.FLOOR);
     }
 
@@ -350,7 +353,7 @@ function buildMap(){
     const isCorridor=cells.every(c=>c[1]===cy)||n>=6&&cells.filter(c=>c[1]===cy).length===n;
     const type=isCorridor?'COULOIR':n>=18?pick(GRAND):n>=10?pick(MOYEN):n>=5?pick(PETIT):pick(MINUS);
     const poser=(f,p,mur)=>{ for(const [x,y] of cells)
-      if(at(x,y)===T.FLOOR&&Math.random()<p&&(mur===undefined||contreMur(x,y)===mur)) put(x,y,f); };
+      if(at(x,y)===T.FLOOR&&rng()<p&&(mur===undefined||contreMur(x,y)===mur)) put(x,y,f); };
     if(type==='SALON'||type==='SÉJOUR'){ poser(T.WALL,0.20,false); poser(T.WOOD,0.16,true); }
     else if(type==='CUISINE'){ poser(T.WALL,0.55,true); poser(T.WOOD,0.18,true); }
     else if(type==='CHAMBRE'){ poser(T.WALL,0.30,true); poser(T.WOOD,0.22,true); }
@@ -375,25 +378,25 @@ function buildMap(){
   for(const [x,y] of ring){
     if(at(x,y)!==T.BLD) continue;
     if(x===bx0&&y===cy) continue;
-    if(Math.random()<0.28){
+    if(rng()<0.28){
       put(x,y,T.WIN);
       const [dx,dy]=(at(x-1,y)===T.BLD||at(x+1,y)===T.BLD)?[1,0]:[0,1];
-      if(Math.random()<0.4&&at(x+dx,y+dy)===T.BLD) put(x+dx,y+dy,T.WIN);
+      if(rng()<0.4&&at(x+dx,y+dy)===T.BLD) put(x+dx,y+dy,T.WIN);
     }
   }
-  if(Math.random()<0.85){                        // un obus est tombé
+  if(rng()<0.85){                        // un obus est tombé
     const ex=rint(bx0+1,HALF-2), ey=rint(by0+1,by1-1);
     for(let j=-1;j<=1;j++) for(let i=-1;i<=1;i++){
       const v=at(ex+i,ey+j);
-      if(isWallT(v)&&Math.random()<0.55) put(ex+i,ey+j,T.RUBBLE);
-      else if(v!==T.OPEN&&!isWallT(v)&&Math.random()<0.7)
-        put(ex+i,ey+j,Math.random()<0.5?T.RUBBLE:T.MARSH);
+      if(isWallT(v)&&rng()<0.55) put(ex+i,ey+j,T.RUBBLE);
+      else if(v!==T.OPEN&&!isWallT(v)&&rng()<0.7)
+        put(ex+i,ey+j,rng()<0.5?T.RUBBLE:T.MARSH);
     }
   }
   for(let y=0;y<ROWS;y++) put(1,y,T.ROAD);
   for(let x=2;x<bx0;x++) if(at(x,cy)===T.OPEN) put(x,cy,T.ROAD);   // allée
   for(let k=0;k<rint(2,3);k++){                                    // muret de cour
-    let x=rint(2,Math.max(2,bx0-1)), y=rint(1,ROWS-3), n2=rint(2,4), dv=Math.random()<0.65;
+    let x=rint(2,Math.max(2,bx0-1)), y=rint(1,ROWS-3), n2=rint(2,4), dv=rng()<0.65;
     while(n2-->0){ if(at(x,y)===T.OPEN) put(x,y,T.WALL); if(dv) y++; else x++; }
   }
   for(let k=0;k<rint(1,3);k++){
@@ -431,8 +434,8 @@ function buildMap(){
   mir(ox2,oy2,T.FLOOR);
   for(const [dx,dy] of [[-2,-1],[-1,2]]){
     const x=ox2+dx, y=oy2+dy;
-    if(inMap(x,y)&&grid[idx(x,y)]===T.FLOOR&&Math.random()<0.8)
-      mir(x,y,Math.random()<.5?T.WALL:T.RUBBLE);
+    if(inMap(x,y)&&grid[idx(x,y)]===T.FLOOR&&rng()<0.8)
+      mir(x,y,rng()<.5?T.WALL:T.RUBBLE);
   }
 }
 
@@ -895,7 +898,7 @@ function aiPlan(){
       for(const f of visible){
         const near=visible.filter(o=>dist(o.x,o.y,f.x,f.y)<80).length;
         if(dist(u.x,u.y,f.x,f.y)<400&&(near>=2||isCovered(u.x,u.y,f.x,f.y))){
-          u.fire={kind:'nade',x:f.x+rnd(-14,14),y:f.y+rnd(-14,14)}; break;
+          u.fire={kind:'nade',x:f.x+grnd(-14,14),y:f.y+grnd(-14,14)}; break;
         }
       }
     }
@@ -946,7 +949,7 @@ function aiPlan(){
       if(inObj) s+=(scoreB>=scoreR?150:70);
       s-=dist(px,py,objCenter(u).x,objCenter(u).y)*0.06;
       if(u.supp>50) s+=los(px,py,anchor.x,anchor.y)?-60:60;   // sous le feu : se défiler
-      s+=rnd(-18,18);
+      s+=grnd(-18,18);
       if(s>bs){bs=s;bestP={gx,gy};}
     }
     if(bestP){
@@ -979,7 +982,7 @@ function beginResolve(){
   phase='resolve'; rt=0;
   aiPlan();
   recBeginTurn();
-  for(const u of units){ u.cd=rnd(0,u.c.cd); u.moving=!!u.mv; }
+  for(const u of units){ u.cd=grnd(0,u.c.cd); u.moving=!!u.mv; }
   sfx('go'); refreshUI();
 }
 
@@ -1075,7 +1078,7 @@ function step(dt){
       if(u.supp>50) acc*=0.5;
       if(watching&&!u.moving) acc*=1.2;             // posté, l'arme déjà en position
       if(tgt){ acc*=coverMul(u.x,u.y,tgt.x,tgt.y); if(tgt.mv&&tgt.mv.run&&tgt.moving) acc*=1.2; }
-      const hit=!!tgt&&Math.random()<acc;
+      const hit=!!tgt&&rng()<acc;
       fire(u,tx,ty,hit,tgt);
     }
   }
@@ -1093,7 +1096,7 @@ function step(dt){
     const gt=grid[idx(gx,gy)];
     if(isWallT(gt)){ wake(b,.5); impact(nx,ny,'#d8c98a'); sparks(nx,ny,'#d8c98a',7);
       decal(nx,ny,4,'rgba(30,30,25,.5)'); bullets.splice(i,1); continue; }
-    if(gt===T.WOOD&&Math.random()<Math.hypot(b.vx,b.vy)*dt*0.0055){   // un tronc l'a pris
+    if(gt===T.WOOD&&rng()<Math.hypot(b.vx,b.vy)*dt*0.0055){   // un tronc l'a pris
       wake(b,.4); sparks(nx,ny,'#6f8c4e',5); bullets.splice(i,1); continue; }
     // suppression au passage + impact
     for(const u of units){
@@ -1159,8 +1162,8 @@ function updateParts(dt){
 
 function fire(u,tx,ty,hit,tgt){
   const base=Math.atan2(ty-u.y,tx-u.x);
-  let a=base+rnd(-u.c.spread,u.c.spread);
-  if(!hit) a=base+(Math.random()<.5?-1:1)*rnd(0.045,0.13);
+  let a=base+grnd(-u.c.spread,u.c.spread);
+  if(!hit) a=base+(rng()<.5?-1:1)*grnd(0.045,0.13);
   const sp=1060, d=dist(u.x,u.y,tx,ty)+60;
   const bx=u.x+Math.cos(a)*17, by=u.y+Math.sin(a)*17;
   bullets.push({x:bx,y:by,px:bx,py:by,ox:bx,oy:by,wx:bx,wy:by,
@@ -1219,7 +1222,7 @@ function explode(x,y,side){
       const v=grid[idx(gx,gy)];
       if(v!==T.BLD&&v!==T.WIN&&v!==T.PART) continue;
       const dd=dist(gx*TILE+TILE/2,gy*TILE+TILE/2,x,y);
-      if(dd<64&&Math.random()<(v===T.WIN?0.95:v===T.PART?0.9:0.45)) cand.push([dd,gx,gy]);
+      if(dd<64&&rng()<(v===T.WIN?0.95:v===T.PART?0.9:0.45)) cand.push([dd,gx,gy]);
     }
   cand.sort((a,b)=>a[0]-b[0]);
   for(const [,gx,gy] of cand.slice(0,3)) breach(gx,gy);
@@ -2027,6 +2030,7 @@ function refreshUI(){
    BOUCLE
    ========================================================================== */
 function newGame(){
+  rng=createRng((Math.random()*4294967296)>>>0);   // le point d'entrée choisit la graine de jeu
   bullets=[]; parts=[]; nades=[]; smokes=[]; smokeGrid=new Uint8Array(COLS*ROWS);
   rec=[]; curRec=null; replaying=false; rp=null;
   turn=1; phase='plan'; rt=0; shake=0; hitstop=0; scoreB=0; scoreR=0; over=false; zones=[];
