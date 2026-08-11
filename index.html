@@ -188,6 +188,7 @@ import { createRng } from './src/rng.js';
 import { idx, inMap, inZone, inAnyZone, zoneCenter } from './src/rules/geometry.js';
 import { isWallT, tcost, tcostPx, solid, blocksSight } from './src/rules/terrain.js';
 import { coverMul, isCovered } from './src/rules/cover.js';
+import { los } from './src/rules/los.js';
 
 const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
 const terrainCv=document.createElement('canvas'); terrainCv.width=W; terrainCv.height=H;
@@ -704,24 +705,6 @@ function breach(gx,gy){
 }
 
 
-/* ligne de vue : les bâtiments coupent net, le bois masque à partir de deux tuiles */
-function los(ax,ay,bx,by){
-  let x0=Math.floor(ax/TILE), y0=Math.floor(ay/TILE);
-  const x1=Math.floor(bx/TILE), y1=Math.floor(by/TILE);
-  const dx=Math.abs(x1-x0), dy=Math.abs(y1-y0);
-  const sx=x0<x1?1:-1, sy=y0<y1?1:-1;
-  let err=dx-dy, guard=0, wood=0;
-  while(guard++<200){
-    if(x0===x1&&y0===y1) return true;
-    const e2=2*err;
-    if(e2>-dy){err-=dy;x0+=sx;}
-    if(e2<dx){err+=dx;y0+=sy;}
-    if(x0===x1&&y0===y1) return true;
-    if(blocksSight(grid,x0,y0)) return false;
-    if(inMap(x0,y0)&&(grid[idx(x0,y0)]===T.WOOD||smokeGrid[idx(x0,y0)])&&++wood>=2) return false;
-  }
-  return true;
-}
 
 
 /* ==========================================================================
@@ -798,10 +781,10 @@ const byId=i=>units.find(u=>u.id===i);
 function updateVision(){
   for(const u of units){
     if(u.side==='r'){
-      u.seen=u.alive&&alive('b').some(o=>dist(o.x,o.y,u.x,u.y)<VIEW&&los(o.x,o.y,u.x,u.y));
+      u.seen=u.alive&&alive('b').some(o=>dist(o.x,o.y,u.x,u.y)<VIEW&&los(grid,smokeGrid,o.x,o.y,u.x,u.y));
       if(u.seen) mem[u.id]={x:u.x,y:u.y,turn};
     } else {
-      u.seen=u.alive&&alive('r').some(o=>dist(o.x,o.y,u.x,u.y)<VIEW&&los(o.x,o.y,u.x,u.y));
+      u.seen=u.alive&&alive('r').some(o=>dist(o.x,o.y,u.x,u.y)<VIEW&&los(grid,smokeGrid,o.x,o.y,u.x,u.y));
       if(u.seen) aiMem[u.id]={x:u.x,y:u.y,turn};
     }
   }
@@ -852,7 +835,7 @@ function aiPlan(){
   const foes=alive('b'), mine=alive('r');
   for(const u of mine){
     u.mv=null; u.fire=null;
-    const visible=foes.filter(f=>dist(u.x,u.y,f.x,f.y)<VIEW&&los(u.x,u.y,f.x,f.y));
+    const visible=foes.filter(f=>dist(u.x,u.y,f.x,f.y)<VIEW&&los(grid,smokeGrid,u.x,u.y,f.x,f.y));
 
     // sous le feu et à découvert : on se masque au fumigène
     if(u.smoke>0&&u.supp>45&&visible.length){
@@ -884,7 +867,7 @@ function aiPlan(){
     // sinon : suppression sur la dernière position connue
     if(!u.fire){
       const known=Object.entries(aiMem).map(([k,v])=>({u:byId(+k),...v}))
-        .filter(m=>m.u&&m.u.alive&&turn-m.turn<=3&&los(u.x,u.y,m.x,m.y)&&dist(u.x,u.y,m.x,m.y)<u.c.ideal+u.c.fall);
+        .filter(m=>m.u&&m.u.alive&&turn-m.turn<=3&&los(grid,smokeGrid,u.x,u.y,m.x,m.y)&&dist(u.x,u.y,m.x,m.y)<u.c.ideal+u.c.fall);
       if(known.length){ const k=known[0]; u.fire={kind:'point',x:k.x,y:k.y}; }
     }
     // plus rien à viser : guet sur l'axe d'où ça viendra
@@ -907,7 +890,7 @@ function aiPlan(){
       if(dist(u.x,u.y,px,py)>u.c.move*(u.wantRun?RUN:1)*1.1) continue;
       const d=dist(px,py,anchor.x,anchor.y);
       let s=-Math.abs(d-u.c.ideal*0.85)*0.4;
-      if(los(px,py,anchor.x,anchor.y)) s+=90; else s-=40;
+      if(los(grid,smokeGrid,px,py,anchor.x,anchor.y)) s+=90; else s-=40;
       if(isCovered(grid,anchor.x,anchor.y,px,py)) s+=110;
       const tt=grid[idx(gx,gy)];                       // l'IA lit le terrain
       if(tt===T.RUBBLE) s+=70; else if(tt===T.WOOD) s+=55;
@@ -915,7 +898,7 @@ function aiPlan(){
       const inObj=inAnyZone(zones,gx,gy);
       if(inObj) s+=(scoreB>=scoreR?150:70);
       s-=dist(px,py,objCenter(u).x,objCenter(u).y)*0.06;
-      if(u.supp>50) s+=los(px,py,anchor.x,anchor.y)?-60:60;   // sous le feu : se défiler
+      if(u.supp>50) s+=los(grid,smokeGrid,px,py,anchor.x,anchor.y)?-60:60;   // sous le feu : se défiler
       s+=grnd(-18,18);
       if(s>bs){bs=s;bestP={gx,gy};}
     }
@@ -1004,7 +987,7 @@ function step(dt){
         let da=Math.atan2(e.y-u.y,e.x-u.x)-u.fire.ang;
         while(da>Math.PI)da-=2*Math.PI; while(da<-Math.PI)da+=2*Math.PI;
         if(Math.abs(da)>WATCH_CONE) continue;
-        if(!los(u.x,u.y,e.x,e.y)) continue;
+        if(!los(grid,smokeGrid,u.x,u.y,e.x,e.y)) continue;
         if(d<bd){ bd=d; best=e; }
       }
       if(!best){                                  // rien en vue : on reste l'arme épaulée sur le cône
@@ -1020,7 +1003,7 @@ function step(dt){
     else if(kind==='unit'){
       tgt=byId(u.fire.id);
       if(!tgt||!tgt.alive){ u.fire=null; continue; }
-      const visible=dist(u.x,u.y,tgt.x,tgt.y)<VIEW&&los(u.x,u.y,tgt.x,tgt.y);
+      const visible=dist(u.x,u.y,tgt.x,tgt.y)<VIEW&&los(grid,smokeGrid,u.x,u.y,tgt.x,tgt.y);
       const m=(u.side==='b'?mem:aiMem)[tgt.id];
       if(visible){ tx=tgt.x; ty=tgt.y; }
       else if(m){ tx=m.x; ty=m.y; tgt=null; }       // on arrose la dernière position connue
@@ -1034,7 +1017,7 @@ function step(dt){
 
     const d=dist(u.x,u.y,tx,ty);
     if(d>u.c.ideal+u.c.fall) continue;
-    if(!los(u.x,u.y,tx,ty)) continue;
+    if(!los(grid,smokeGrid,u.x,u.y,tx,ty)) continue;
 
     u.cd-=dt;
     if(u.cd<=0){
@@ -1770,7 +1753,7 @@ function drawOrders(){
       const ex=u.mv&&u.mv.pts.length?u.mv.pts[u.mv.pts.length-1]:u;
       // la ligne de tir est-elle praticable, d'ici ou d'où l'on arrivera ?
       const nade=u.fire.kind==='nade', rng=u.c.ideal+u.c.fall;
-      const okFrom=(ax,ay)=>dist(ax,ay,tx,ty)<=rng&&los(ax,ay,tx,ty);
+      const okFrom=(ax,ay)=>dist(ax,ay,tx,ty)<=rng&&los(grid,smokeGrid,ax,ay,tx,ty);
       const ko=!nade&&!okFrom(u.x,u.y)&&!okFrom(ex.x,ex.y);
       if(ko) lbl=dist(ex.x,ex.y,tx,ty)>rng?'HORS DE PORTÉE':'PAS DE LIGNE DE TIR';
       const fc=nade?'#7a5c1f':ko?'#71766D':C.red;
