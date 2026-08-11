@@ -43,7 +43,8 @@ pourcentage de couverture n'est pas une cible.
 | `tests/victory.test.js` | contrôle de zone, point du tour, conditions de fin |
 | `tests/combat.test.js` | précision (`hitChance`), angle du tir (`shotAngle`) |
 | `tests/threat.test.js` | carte de menace (portée, LOS, mur bloquant, cumul d'ennemis) |
-| `tests/mapgen.test.js` | déterminisme à graine fixe, symétrie 180°, hall, composition |
+| `tests/ai.test.js` | choix de la cible prioritaire (`pickFocusTarget`) |
+| `tests/mapgen.test.js` | déterminisme à graine fixe (par archétype), symétrie 180°, hall, cloisonnement |
 | `tests/smoke.test.js` | **filet bout-en-bout headless** : charge le jeu (stubs DOM/canvas/audio), résout un tour, rejoue |
 
 ## Le filet de fumée

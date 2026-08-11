@@ -11,6 +11,17 @@ import { los } from '../rules/los.js';
 import { isCovered } from '../rules/cover.js';
 import { findPath, trimPath } from '../rules/pathfind.js';
 
+/* focus fire : cible prioritaire de l'escouade, la plus rentable à concentrer.
+   enemies : [{id, hp, maxHp, cls, covered, seers}]. Renvoie l'id (départage par id). */
+export function pickFocusTarget(enemies){
+  let best=null, bs=-1e9;
+  for(const e of enemies){
+    const s=(e.maxHp-e.hp)*0.7 + e.seers*22 + (e.covered?-30:40) + (e.cls==='mit'?25:0);
+    if(s>bs || (s===bs && (best===null || e.id<best))){ bs=s; best=e.id; }
+  }
+  return best;
+}
+
 export function aiPlan(world, rng){
   const { units, zones, aiMem, grid, smokeGrid, turn, scoreB, scoreR } = world;
   const rint=(a,b)=>Math.floor(a+rng()*(b-a+1));
@@ -32,6 +43,21 @@ export function aiPlan(world, rng){
     return {x:ks.reduce((a,k)=>a+k.x,0)/ks.length,y:ks.reduce((a,k)=>a+k.y,0)/ks.length};
   }
     const foes=alive('b'), mine=alive('r');
+
+    // pré-passe : qui voit qui, pour concentrer le feu (focus fire)
+    const seen=new Map();
+    for(const u of mine)
+      for(const f of foes)
+        if(dist(u.x,u.y,f.x,f.y)<VIEW&&los(grid,smokeGrid,u.x,u.y,f.x,f.y)){
+          let rec=seen.get(f.id);
+          if(!rec){ rec={foe:f,seers:0,covered:isCovered(grid,u.x,u.y,f.x,f.y)}; seen.set(f.id,rec); }
+          rec.seers++;
+        }
+    const knownFoes=[...seen.values()].map(r=>r.foe);
+    const focusId=seen.size
+      ? pickFocusTarget([...seen.values()].map(r=>({id:r.foe.id,hp:r.foe.hp,maxHp:r.foe.maxHp,cls:r.foe.cls,covered:r.covered,seers:r.seers})))
+      : null;
+
     for(const u of mine){
       u.mv=null; u.fire=null;
       const visible=foes.filter(f=>dist(u.x,u.y,f.x,f.y)<VIEW&&los(grid,smokeGrid,u.x,u.y,f.x,f.y));
@@ -59,6 +85,7 @@ export function aiPlan(world, rng){
           let s=200-Math.abs(d-u.c.ideal)*0.35 + (f.maxHp-f.hp)*0.7;
           if(isCovered(grid,u.x,u.y,f.x,f.y)) s-=45;
           if(f.cls==='mit') s+=25;
+          if(f.id===focusId) s+=120;                  // focus fire : on concentre sur la cible prioritaire
           if(s>bs){bs=s;best=f;}
         }
         u.fire={kind:'unit',id:best.id};
@@ -69,12 +96,25 @@ export function aiPlan(world, rng){
           .filter(m=>m.u&&m.u.alive&&turn-m.turn<=3&&los(grid,smokeGrid,u.x,u.y,m.x,m.y)&&dist(u.x,u.y,m.x,m.y)<u.c.ideal+u.c.fall);
         if(known.length){ const k=known[0]; u.fire={kind:'point',x:k.x,y:k.y}; }
       }
+      // fumée offensive : masquer un tireur ennemi connu pour progresser à découvert
+      if((!u.fire||u.fire.kind==='point')&&u.smoke>0&&knownFoes.length){
+        const obj=objCenter(u);
+        if(dist(u.x,u.y,obj.x,obj.y)>u.c.ideal){        // encore loin de l'objectif : on veut avancer
+          const threat=knownFoes.find(f=>dist(u.x,u.y,f.x,f.y)<f.c.ideal+f.c.fall&&los(grid,smokeGrid,f.x,f.y,u.x,u.y));
+          if(threat){
+            const d=dist(u.x,u.y,threat.x,threat.y), k=Math.min(0.6,120/Math.max(1,d));
+            u.fire={kind:'smoke',x:u.x+(threat.x-u.x)*k,y:u.y+(threat.y-u.y)*k};
+          }
+        }
+      }
       // plus rien à viser : guet sur l'axe d'où ça viendra
       if(!u.fire){
         const a=lastKnownCenter()||objCenter(u);
         u.fire={kind:'watch',ang:Math.atan2(a.y-u.y,a.x-u.x),x:a.x,y:a.y};
         u.wantRun=!visible.length&&!lastKnownCenter()&&dist(u.x,u.y,a.x,a.y)>u.c.move*1.2;
       } else u.wantRun=false;
+      // couverture mutuelle : une unité qui peut tirer tient sa position pendant que d'autres avancent
+      const overwatch = !!u.fire && (u.fire.kind==='unit'||u.fire.kind==='point');
 
       // déplacement : chercher une position couverte, en vue d'une cible, proche de l'objectif
       const tgt=u.fire&&u.fire.kind==='unit'?byId(u.fire.id):null;
@@ -98,6 +138,7 @@ export function aiPlan(world, rng){
         if(inObj) s+=(scoreB>=scoreR?150:70);
         s-=dist(px,py,objCenter(u).x,objCenter(u).y)*0.06;
         if(u.supp>50) s+=los(grid,smokeGrid,px,py,anchor.x,anchor.y)?-60:60;   // sous le feu : se défiler
+        if(overwatch){ if(gx===gx0&&gy===gy0) s+=160; else s-=dist(px,py,u.x,u.y)*0.25; }  // tient la position
         s+=grnd(-18,18);
         if(s>bs){bs=s;bestP={gx,gy};}
       }

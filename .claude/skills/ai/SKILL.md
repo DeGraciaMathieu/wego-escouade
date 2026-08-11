@@ -29,6 +29,21 @@ les unités (`u.mv`, `u.fire`, `u.wantRun`). Elle ne mute aucune autre partie de
    distance à l'objectif, défilement sous le feu, bruit `grnd`), et pose `u.mv` via
    `findPath`/`trimPath` vers la meilleure.
 
+## Coordination d'escouade
+
+Au-delà des décisions par unité, une **pré-passe** et quelques biais coordonnent l'escouade :
+
+- **Focus fire** — une pré-passe recense qui voit qui, puis `pickFocusTarget(enemies)` (décision
+  **pure et testée**, exportée) désigne la cible prioritaire commune (blessée, à découvert, vue
+  par plusieurs, mitrailleur). La sélection de cible ajoute un bonus à cette cible → le feu se
+  concentre.
+- **Fumée offensive** — si une unité veut avancer vers l'objectif (encore loin) et qu'un tireur
+  ennemi **connu** (vu par l'escouade) a une ligne de vue sur elle, elle pose un fumigène entre
+  elle et ce tireur pour masquer la progression — au lieu de garder la fumée en pur secours.
+- **Couverture mutuelle** (bounding overwatch léger) — une unité qui a une solution de tir
+  (`fire.kind` `unit`/`point`) est en `overwatch` : son déplacement est biaisé pour **tenir sa
+  position** (couvrir) pendant que les unités sans contact avancent.
+
 ## S'appuie sur la couche règles
 
 `los`, `isCovered`, `inAnyZone`, `zoneCenter`, `solid`, `findPath`, `trimPath` — l'IA lit le

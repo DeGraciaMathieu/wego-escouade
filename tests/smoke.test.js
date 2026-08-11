@@ -52,13 +52,14 @@ test('le jeu se charge et met en place une partie sans planter', async () => {
   assert.equal(g.turn, 1);
 });
 
-test('un tour complet se résout sans planter et fait avancer la partie', async () => {
+test('plusieurs tours se résolvent sans planter (contact, IA coordonnée)', async () => {
   const g = await import('../src/main.js');
-  g.beginResolve();
-  assert.equal(g.phase, 'resolve');
   const step = 1 / 120;
-  for (let t = 0; t < RESOLVE; t += step) g.step(step);
-  g.endResolve();
+  for (let turn = 0; turn < 5 && g.phase === 'plan'; turn++) {
+    g.beginResolve();                       // pose les ordres IA (focus fire, fumée, overwatch)
+    for (let t = 0; t < RESOLVE; t += step) g.step(step);
+    g.endResolve();
+  }
   assert.ok(['plan', 'over'].includes(g.phase));
   assert.ok(Number.isFinite(g.scoreB) && Number.isFinite(g.scoreR));
 });
