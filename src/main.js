@@ -1795,3 +1795,7 @@ function loop(now){
 }
 newGame();
 requestAnimationFrame(loop);
+
+/* points d'entrée exposés pour le test de fumée headless (voir tests/smoke.test.js) */
+export { newGame, beginResolve, step, endResolve, startReplay, stepReplay };
+export { units, bullets, parts, phase, turn, scoreB, scoreR, over };
