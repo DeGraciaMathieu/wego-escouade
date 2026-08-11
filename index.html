@@ -185,6 +185,7 @@ import {
   REC_HZ, UF, BF,
 } from './src/config.js';
 import { createRng } from './src/rng.js';
+import { idx, inMap, inZone, inAnyZone, zoneCenter } from './src/rules/geometry.js';
 
 const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
 const terrainCv=document.createElement('canvas'); terrainCv.width=W; terrainCv.height=H;
@@ -202,8 +203,6 @@ const grnd=(a,b)=>a+rng()*(b-a);                  // flottant de jeu
 const rint=(a,b)=>Math.floor(grnd(a,b+1));        // entier de jeu (buildMap, IA) — seedé
 const clamp=(v,a,b)=>v<a?a:v>b?b:v;
 const dist=(a,b,c,d)=>Math.hypot(a-c,b-d);
-const idx=(x,y)=>y*COLS+x;
-const inMap=(x,y)=>x>=0&&y>=0&&x<COLS&&y<ROWS;
 
 /* ---------- état ---------- */
 let grid, indoor, rooms, units, bullets, parts, nades, smokes, smokeGrid;
@@ -212,9 +211,6 @@ let sel=null, mode='auto', hover={x:-999,y:-999}, hoverPath=null, speed=1;
 let mem={};           // mémoire du joueur : dernière position connue des ennemis
 let aiMem={};         // mémoire de l'IA
 let zones=[];                           // zones de contrôle du tirage courant
-const inZone=(z,x,y)=>x>=z.x0&&x<=z.x1&&y>=z.y0&&y<=z.y1;
-const inAnyZone=(x,y)=>zones.some(z=>inZone(z,x,y));
-const zoneCenter=z=>({x:(z.x0+z.x1+1)/2*TILE,y:(z.y0+z.y1+1)/2*TILE});
 
 /* ==========================================================================
    CARTE
@@ -419,7 +415,7 @@ function buildMap(){
     zones.push({x0:c.x0,y0:c.y0,x1:c.x1,y1:c.y1,n:c.n});
     zones.push({x0:COLS-1-c.x1,y0:ROWS-1-c.y1,x1:COLS-1-c.x0,y1:ROWS-1-c.y0,n:c.n});
   }
-  rooms=rooms.filter(r=>!inAnyZone(Math.floor(r.x/TILE),Math.floor(r.y/TILE)));
+  rooms=rooms.filter(r=>!inAnyZone(zones,Math.floor(r.x/TILE),Math.floor(r.y/TILE)));
 
   /* --- déploiement dégagé, la rue conservée --- */
   for(let y=0;y<ROWS;y++) for(let x=0;x<2;x++){
@@ -945,7 +941,7 @@ function aiPlan(){
       const tt=grid[idx(gx,gy)];                       // l'IA lit le terrain
       if(tt===T.RUBBLE) s+=70; else if(tt===T.WOOD) s+=55;
       else if(tt===T.MARSH) s-=110; else if(tt===T.WALL) s-=150; else if(tt===T.ROAD) s-=25;
-      const inObj=inAnyZone(gx,gy);
+      const inObj=inAnyZone(zones,gx,gy);
       if(inObj) s+=(scoreB>=scoreR?150:70);
       s-=dist(px,py,objCenter(u).x,objCenter(u).y)*0.06;
       if(u.supp>50) s+=los(px,py,anchor.x,anchor.y)?-60:60;   // sous le feu : se défiler
