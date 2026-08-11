@@ -191,6 +191,7 @@ import { coverMul, isCovered } from './src/rules/cover.js';
 import { los } from './src/rules/los.js';
 import { findPath, trimPath } from './src/rules/pathfind.js';
 import { zoneControl, roundPoint, victoryOutcome, timeUpOutcome } from './src/rules/victory.js';
+import { hitChance, shotAngle } from './src/rules/combat.js';
 
 const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
 const terrainCv=document.createElement('canvas'); terrainCv.width=W; terrainCv.height=H;
@@ -979,13 +980,13 @@ function step(dt){
     u.cd-=dt;
     if(u.cd<=0){
       u.cd+=u.c.cd;
-      let acc=u.c.acc;
-      acc*=clamp(1-Math.max(0,d-u.c.ideal)/u.c.fall,0.15,1);
-      if(u.moving) acc*=u.c.movePen;
-      if(u.supp>50) acc*=0.5;
-      if(watching&&!u.moving) acc*=1.2;             // posté, l'arme déjà en position
-      if(tgt){ acc*=coverMul(grid,u.x,u.y,tgt.x,tgt.y); if(tgt.mv&&tgt.mv.run&&tgt.moving) acc*=1.2; }
-      const hit=!!tgt&&rng()<acc;
+      let hit=false;
+      if(tgt){
+        const cover=coverMul(grid,u.x,u.y,tgt.x,tgt.y);
+        const targetRunning=!!(tgt.mv&&tgt.mv.run&&tgt.moving);
+        const acc=hitChance({c:u.c,d,moving:u.moving,supp:u.supp,watching,cover,targetRunning});
+        hit=rng()<acc;
+      }
       fire(u,tx,ty,hit,tgt);
     }
   }
@@ -1069,8 +1070,7 @@ function updateParts(dt){
 
 function fire(u,tx,ty,hit,tgt){
   const base=Math.atan2(ty-u.y,tx-u.x);
-  let a=base+grnd(-u.c.spread,u.c.spread);
-  if(!hit) a=base+(rng()<.5?-1:1)*grnd(0.045,0.13);
+  const a=shotAngle(base,u.c.spread,hit,rng);
   const sp=1060, d=dist(u.x,u.y,tx,ty)+60;
   const bx=u.x+Math.cos(a)*17, by=u.y+Math.sin(a)*17;
   bullets.push({x:bx,y:by,px:bx,py:by,ox:bx,oy:by,wx:bx,wy:by,
