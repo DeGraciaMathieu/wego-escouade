@@ -26,6 +26,7 @@ import { findPath, trimPath } from './rules/pathfind.js';
 import { zoneControl, roundPoint, victoryOutcome, timeUpOutcome } from './rules/victory.js';
 import { hitChance, shotAngle } from './rules/combat.js';
 import { threatTiles } from './rules/threat.js';
+import { visibleTiles } from './rules/visibility.js';
 import { sfx, audio } from './audio/audio.js';
 import { generateMap } from './state/mapgen.js';
 import { aiPlan } from './ai/plan.js';
@@ -51,6 +52,8 @@ let sel=null, mode='auto', hover={x:-999,y:-999}, hoverPath=null, speed=1;
 let showThreat=false;                   // overlay de menace (touche A)
 let archetypeKey='maison';              // type de terrain choisi pour la partie
 let playerSquad=ROSTER.slice();         // 4 classes choisies par le joueur (une par emplacement)
+let fogMode=false;                      // mode brouillard de guerre (choisi à l'accueil)
+let visGrid, explored;                  // tuiles vues maintenant / déjà explorées (brouillard)
 let mem={};           // mémoire du joueur : dernière position connue des ennemis
 let aiMem={};         // mémoire de l'IA
 let zones=[];                           // zones de contrôle du tirage courant
@@ -900,7 +903,27 @@ function drawRecOrders(){
 /* ==========================================================================
    RENDU
    ========================================================================== */
+/* brouillard de guerre : ce que l'escouade voit à l'instant s'ajoute aux tuiles explorées */
+function computeFog(){
+  const viewers=alive('b').map(u=>({x:u.x,y:u.y}));
+  visGrid=visibleTiles(grid,smokeGrid,viewers,VIEW);
+  for(let i=0;i<explored.length;i++) if(visGrid[i]) explored[i]=1;
+}
+/* voile à trois paliers : vu maintenant (rien) · exploré (assombri) · jamais vu (noir) */
+function drawFog(){
+  ctx.save();
+  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
+    const i=idx(x,y);
+    if(visGrid[i]) continue;
+    ctx.fillStyle=explored[i]?'rgba(12,15,11,.55)':'rgba(8,10,8,.90)';
+    ctx.fillRect(x*TILE,y*TILE,TILE,TILE);
+  }
+  ctx.restore();
+}
+
 function draw(){
+  const fogOn=fogMode&&(phase==='plan'||phase==='resolve');
+  if(fogOn) computeFog();
   ctx.save();
   if(shake>0.2){ const s=shake; ctx.translate(rnd(-s,s),rnd(-s,s)); }
   ctx.drawImage(terrainCv,0,0);
@@ -916,6 +939,7 @@ function draw(){
     ctx.fillText(z.held==='b'?'NOUS':'ENN',ox+ow-18,oy+14); ctx.textAlign='left';
   }
   drawSmoke();
+  if(fogOn) drawFog();                          // le voile masque le terrain non vu
   if(phase==='replay') drawRecOrders();
   if(phase==='plan') drawOrders();
 
@@ -1424,14 +1448,25 @@ function renderSlots(){
     card.querySelector('.htoken').onclick=()=>cycle(1);
   });
 }
+const MODES=[
+  {k:'std',name:'Standard',d:'Terrain entier visible ; les ennemis n\'apparaissent qu\'à vue.'},
+  {k:'fog',name:'Brouillard de guerre',d:'Voile sur tout ce que l\'escouade ne voit pas ; les zones explorées restent en mémoire.'},
+];
 function buildHome(){
   renderSlots();
   document.getElementById('homeTerrains').innerHTML=ARCHETYPE_ORDER.map(k=>
     `<button class="hterr ${k===archetypeKey?'sel':''}" data-terr="${k}">
       <b>${ARCHETYPES[k].name}</b><small>${TERRAIN_DESC[k]||''}</small></button>`).join('');
-  document.querySelectorAll('.hterr').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('#homeTerrains .hterr').forEach(b=>b.onclick=()=>{
     archetypeKey=b.dataset.terr;
-    document.querySelectorAll('.hterr').forEach(x=>x.classList.toggle('sel',x===b));
+    document.querySelectorAll('#homeTerrains .hterr').forEach(x=>x.classList.toggle('sel',x===b));
+  });
+  document.getElementById('homeModes').innerHTML=MODES.map(m=>
+    `<button class="hterr ${((m.k==='fog')===fogMode)?'sel':''}" data-mode="${m.k}">
+      <b>${m.name}</b><small>${m.d}</small></button>`).join('');
+  document.querySelectorAll('#homeModes .hterr').forEach(b=>b.onclick=()=>{
+    fogMode=b.dataset.mode==='fog';
+    document.querySelectorAll('#homeModes .hterr').forEach(x=>x.classList.toggle('sel',x===b));
   });
 }
 buildHome();
@@ -1507,6 +1542,7 @@ function newGame(){
   rec=[]; curRec=null; replaying=false; rp=null;
   turn=1; phase='plan'; rt=0; shake=0; hitstop=0; scoreB=0; scoreR=0; over=false; zones=[];
   mem={}; aiMem={};
+  visGrid=new Uint8Array(COLS*ROWS); explored=new Uint8Array(COLS*ROWS);   // brouillard remis à neuf
   genMap(); dctx.clearRect(0,0,W,H); setupUnits(); updateVision();
   sel=alive('b')[0]; mode='auto';
   refreshUI();
