@@ -6,7 +6,7 @@
    ========================================================================== */
 
 import {
-  W, H, TILE, COLS, ROWS, RESOLVE, MAXTURN, WINPTS, DT_MAX, SUBSTEP,
+  W, H, TILE, COLS, ROWS, RESOLVE, MAXTURN, WINPTS, DT_MAX, SUBSTEP, WHEEL_DEADZONE, WHEEL_R,
   C, T, TI, TC, CLS, ROSTER, HALLZ,
   VIEW, RUN, NOISE_R, NOISE_EVERY, WATCH_CONE, WATCH_DELAY,
   ASTAR_HEURISTIC, MOVE_SUPP_PENALTY, SUPP_DECAY, SUPP_ENDTURN_MULT,
@@ -1039,6 +1039,7 @@ function draw(){
       ctx.fillRect(p.x-p.size/2,p.y-p.size/2,p.size,p.size); ctx.globalAlpha=1;
     }
   }
+  if(phase==='plan'&&wheel) drawWheel();
   ctx.restore();
 
   if(phase==='plan') drawTerrainTip();
@@ -1206,6 +1207,52 @@ function drawWatchCone(u,alpha,active){
   ctx.restore();
 }
 
+/* roue d'ordres — deux états : menu de pétales (rien d'armé) ou visée (un mode armé) */
+function drawWheel(){
+  const {cx,cy,u}=wheel;
+  ctx.save();
+  if(mode==='auto'){                               // --- état menu : l'anneau de pétales ---
+    const Rlab=(WHEEL_DEADZONE+WHEEL_R)/2;
+    const dh=dist(cx,cy,hover.x,hover.y), hi=petalAt(hover.x-cx,hover.y-cy);
+    const near=dh>WHEEL_DEADZONE&&dh<=WHEEL_R;
+    ctx.fillStyle='rgba(15,20,15,.5)';
+    ctx.beginPath(); ctx.arc(cx,cy,WHEEL_R+8,0,6.283); ctx.fill();
+    PETALS.forEach((pt,i)=>{
+      const en=petalEnabled(pt,u), on=near&&i===hi&&en;
+      ctx.beginPath(); ctx.moveTo(cx,cy);
+      ctx.arc(cx,cy,WHEEL_R,pt.ang-Math.PI/6,pt.ang+Math.PI/6); ctx.closePath();
+      ctx.fillStyle=on?'rgba(201,162,39,.85)':en?'rgba(255,255,255,.07)':'rgba(255,255,255,.02)';
+      ctx.fill(); ctx.strokeStyle='rgba(0,0,0,.35)'; ctx.lineWidth=1; ctx.stroke();
+      ctx.fillStyle=on?'#1b1b12':en?'#EFEDE2':'#6e756d';
+      ctx.font='bold 9px "Arial Narrow",sans-serif'; ctx.textAlign='center';
+      let lab=pt.lab;
+      if(pt.mode==='nade') lab+=' ×'+u.nades;
+      if(pt.mode==='smoke') lab+=' ×'+u.smoke;
+      ctx.fillText(lab,cx+Math.cos(pt.ang)*Rlab,cy+Math.sin(pt.ang)*Rlab+3);
+    });
+  } else {                                         // --- état visée : indicateur compact + aides ---
+    const pet=PETALS.find(p=>p.mode===mode);
+    if(pet){
+      ctx.fillStyle=C.gold; ctx.font='bold 9px "Arial Narrow",sans-serif'; ctx.textAlign='center';
+      ctx.fillText(pet.lab,cx,cy-WHEEL_DEADZONE-5);
+    }
+    if(mode==='nade'||mode==='smoke'){             // portée de lancer
+      const R=mode==='nade'?NADE_RANGE:SMOKE_RANGE, inR=dist(u.x,u.y,hover.x,hover.y)<=R;
+      ctx.strokeStyle=inR?'rgba(201,162,39,.4)':'rgba(168,50,42,.5)';
+      ctx.setLineDash([4,6]); ctx.lineWidth=1.4;
+      ctx.beginPath(); ctx.arc(u.x,u.y,R,0,6.283); ctx.stroke(); ctx.setLineDash([]);
+    }
+  }
+  // moyeu : état de l'ordre en cours (pastille mouvement · pastille tir)
+  ctx.fillStyle='rgba(20,25,20,.74)'; ctx.beginPath(); ctx.arc(cx,cy,WHEEL_DEADZONE,0,6.283); ctx.fill();
+  ctx.fillStyle=u.mv?C.blueL:'rgba(255,255,255,.16)';
+  ctx.beginPath(); ctx.arc(cx-7,cy,3.6,0,6.283); ctx.fill();
+  ctx.fillStyle=u.fire?C.redL:'rgba(255,255,255,.16)';
+  ctx.beginPath(); ctx.arc(cx+7,cy,3.6,0,6.283); ctx.fill();
+  ctx.textAlign='left';
+  ctx.restore();
+}
+
 /* chevrons de franchissement : là où le chemin paie le terrain au prix fort */
 function drawCrossings(sx,sy,pts,alpha){
   let px=sx, py=sy;
@@ -1359,6 +1406,29 @@ function mapPos(e){
 function unitAt(x,y,side){
   return units.find(u=>u.alive&&u.side===side&&(side==='b'||u.seen)&&dist(u.x,u.y,x,y)<17);
 }
+/* roue d'ordres : 6 pétales à 60°, deux familles (mouvement / tir) */
+const PETALS=[
+  {mode:'run',   lab:'COURIR',   ang:-Math.PI/2},
+  {mode:'fire',  lab:'TIRER',    ang:-Math.PI/6},
+  {mode:'nade',  lab:'GRENADE',  ang: Math.PI/6},
+  {mode:'move',  lab:'DÉPLACER', ang: Math.PI/2},
+  {mode:'smoke', lab:'FUMIGÈNE', ang: 5*Math.PI/6},
+  {mode:'watch', lab:'GUET',     ang:-5*Math.PI/6},
+];
+function petalAt(dx,dy){
+  const a=Math.atan2(dy,dx); let best=0,bd=9;
+  PETALS.forEach((p,i)=>{ let d=a-p.ang; while(d>Math.PI)d-=2*Math.PI; while(d<-Math.PI)d+=2*Math.PI;
+    if(Math.abs(d)<bd){ bd=Math.abs(d); best=i; } });
+  return best;
+}
+const petalEnabled=(p,u)=>p.mode==='nade'?u.nades>0:p.mode==='smoke'?u.smoke>0:true;
+
+let wheel=null;   // {u,cx,cy} — roue d'ordres ouverte autour d'un pion (persistante)
+function openWheel(u){ wheel={u,cx:u.x,cy:u.y}; }
+function closeWheel(){ wheel=null; mode='auto'; }
+/* un ordre est « plein » : course (aucun tir possible) ou déplacement + tir posés */
+const orderComplete=u=>!!(u.mv&&u.mv.run)||!!(u.mv&&u.fire);
+
 cv.addEventListener('mousemove',e=>{
   const p=mapPos(e); hover=p;
   if(phase==='plan'&&sel&&sel.alive&&(mode==='auto'||mode==='move'||mode==='run')){
@@ -1376,9 +1446,24 @@ cv.addEventListener('mousedown',e=>{
   audio();
   if(e.button!==0||phase!=='plan') return;
   const p=mapPos(e);
+  // --- roue ouverte : son moyeu et ses pétales captent le clic en priorité ---
+  if(wheel){
+    const own0=unitAt(p.x,p.y,'b');
+    if(own0===wheel.u){ closeWheel(); refreshUI(); return; }             // re-clic sur son pion = fermer
+    if(own0){ sel=own0; openWheel(own0); mode='auto'; refreshUI(); return; }  // autre pion = bascule
+    const dd=dist(wheel.cx,wheel.cy,p.x,p.y);
+    if(dd<=WHEEL_DEADZONE){ if(mode==='auto') closeWheel(); else mode='auto'; refreshUI(); return; } // centre : fermer / annuler la visée
+    if(mode==='auto'&&dd<=WHEEL_R){                                      // état menu : armer un pétale
+      const pet=PETALS[petalAt(p.x-wheel.cx,p.y-wheel.cy)];
+      if(petalEnabled(pet,wheel.u)) setMode(pet.mode); else sfx('deny');
+      return;
+    }
+    // sinon (état visée, ou clic hors anneau en menu) → pose de l'ordre ci-dessous
+  }
   const own=unitAt(p.x,p.y,'b');
-  if(own){ sel=own; mode='auto'; refreshUI(); return; }
+  if(own){ sel=own; mode='auto'; openWheel(own); refreshUI(); return; }  // clic pion = sélection + roue
   if(!sel||!sel.alive) return;
+  // --- pose de l'ordre sur le plateau (clic malin ou mode armé via la roue) ---
   const foe=unitAt(p.x,p.y,'r');
   if(mode==='nade'){ orderNade(sel,p.x,p.y); mode='auto'; }
   else if(mode==='smoke'){ orderSmoke(sel,p.x,p.y); mode='auto'; }
@@ -1387,6 +1472,7 @@ cv.addEventListener('mousedown',e=>{
   else if(foe) orderFireUnit(sel,foe);
   else if(mode==='run') { orderMove(sel,p.x,p.y,true); mode='auto'; }
   else if(mode==='move'||mode==='auto') orderMove(sel,p.x,p.y);
+  if(wheel&&orderComplete(sel)) closeWheel();      // ordre plein → la roue se referme (C)
   refreshUI();
 });
 window.addEventListener('keydown',e=>{
@@ -1406,11 +1492,13 @@ window.addEventListener('keydown',e=>{
   if(e.key==='5') setMode('watch');
   if(e.key==='6') setMode('smoke');
   if(e.key==='a'||e.key==='A') showThreat=!showThreat;   // overlay de menace
-  if(e.key==='Escape'){ mode='auto'; refreshUI(); }
+  if(e.key==='Escape'){ closeWheel(); refreshUI(); }
 });
 function cycleSel(){
   const l=alive('b'); if(!l.length) return;
-  const i=l.indexOf(sel); sel=l[(i+1)%l.length]; mode='auto'; refreshUI();
+  const i=l.indexOf(sel); sel=l[(i+1)%l.length]; mode='auto';
+  if(wheel) openWheel(sel);                 // la roue suit l'unité active
+  refreshUI();
 }
 function setMode(m){ if(phase!=='plan'||!sel) return; mode=(mode===m?'auto':m); refreshUI(); }
 document.querySelectorAll('.obtn[data-mode]').forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
@@ -1545,7 +1633,7 @@ function refreshUI(){
       <div class="ord">${ord}</div></div>`;
   }).join('');
   squadEl.querySelectorAll('.card').forEach(c=>c.onclick=()=>{
-    const u=byId(+c.dataset.id); if(u&&u.alive){ sel=u; mode='auto'; refreshUI(); }
+    const u=byId(+c.dataset.id); if(u&&u.alive){ sel=u; mode='auto'; if(wheel) openWheel(u); refreshUI(); }
   });
 
   const busy=phase!=='plan';

@@ -16,6 +16,10 @@ export const MAXTURN = 12, WINPTS = 5;
 export const DT_MAX = 0.05;                 // plafond de dt pour éviter les sauts (50 ms)
 export const SUBSTEP = 1 / 120;             // pas de simulation interne (120 Hz effectif)
 
+/* ---------- roue d'ordres (radial menu) ---------- */
+export const WHEEL_DEADZONE = 26;           // rayon du moyeu central : clic = fermer / annuler la visée (px)
+export const WHEEL_R = 64;                  // rayon de l'anneau de pétales (px)
+
 /* ---------- couleurs liées aux règles ---------- */
 export const C = {paper:'#E4E0D2',open:'#DCD8C8',wall:'#4A4E47',wallTop:'#5C6058',cover:'#A79E86',
   grid:'rgba(40,50,40,.09)',blue:'#1D4E6E',blueL:'#3E92C9',red:'#A8322A',redL:'#DE6247',
