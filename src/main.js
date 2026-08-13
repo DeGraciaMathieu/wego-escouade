@@ -1399,20 +1399,33 @@ const TERRAIN_DESC={
   ruines:'Éventré par les obus, gravats et longues lignes de vue.',
   ouvert:'Grands volumes, peu de murs, presque tout se voit.',
 };
-function classOptions(sel){
-  return ROSTER.map(k=>`<option value="${k}" ${k===sel?'selected':''}>${CLS[k].tag} · ${CLS[k].name}</option>`).join('');
+/* stats affichées dans chaque carte d'unité, normalisées sur le meilleur du roster */
+const SQUAD_STATS=[{k:'hp',n:'Vie'},{k:'dmg',n:'Feu'},{k:'ideal',n:'Portée'},{k:'move',n:'Vitesse'}];
+const statMax=Object.fromEntries(SQUAD_STATS.map(s=>[s.k,Math.max(...ROSTER.map(k=>CLS[k][s.k]))]));
+function slotCard(cls,i){
+  const c=CLS[cls];
+  const bars=SQUAD_STATS.map(s=>
+    `<div class="hstat"><span>${s.n}</span><i><b style="width:${Math.round(c[s.k]/statMax[s.k]*100)}%"></b></i></div>`).join('');
+  return `<div class="hslot" data-slot="${i}">
+    <div class="hslot-top"><span class="hslot-n">Unité ${i+1}</span>
+      <div class="hslot-nav"><button class="hnav" data-dir="-1">‹</button><button class="hnav" data-dir="1">›</button></div></div>
+    <div class="htoken" title="Changer de classe"><b>${c.tag}</b></div>
+    <div class="hname">${c.name}</div>
+    <div class="hstats">${bars}</div></div>`;
+}
+/* rendu (et re-rendu) des 4 emplacements ; chaque clic fait défiler la classe */
+function renderSlots(){
+  const el=document.getElementById('homeSlots');
+  el.innerHTML=playerSquad.map(slotCard).join('');
+  el.querySelectorAll('.hslot').forEach(card=>{
+    const i=+card.dataset.slot;
+    const cycle=dir=>{ playerSquad[i]=ROSTER[(ROSTER.indexOf(playerSquad[i])+dir+ROSTER.length)%ROSTER.length]; renderSlots(); };
+    card.querySelectorAll('.hnav').forEach(b=>b.onclick=()=>cycle(+b.dataset.dir));
+    card.querySelector('.htoken').onclick=()=>cycle(1);
+  });
 }
 function buildHome(){
-  document.getElementById('homeClasses').innerHTML=ROSTER.map(k=>{
-    const c=CLS[k];
-    return `<div class="hclass"><b>${c.tag}</b><span>${c.name}</span>
-      <em>${c.hp} PV · ${c.dmg} dég · ${c.ideal} idéal</em></div>`;
-  }).join('');
-  document.getElementById('homeSlots').innerHTML=playerSquad.map((cls,i)=>
-    `<label class="hslot"><span>Unité ${i+1}</span>
-      <select data-slot="${i}">${classOptions(cls)}</select></label>`).join('');
-  document.querySelectorAll('#homeSlots select').forEach(s=>
-    s.onchange=()=>{ playerSquad[+s.dataset.slot]=s.value; });
+  renderSlots();
   document.getElementById('homeTerrains').innerHTML=ARCHETYPE_ORDER.map(k=>
     `<button class="hterr ${k===archetypeKey?'sel':''}" data-terr="${k}">
       <b>${ARCHETYPES[k].name}</b><small>${TERRAIN_DESC[k]||''}</small></button>`).join('');
