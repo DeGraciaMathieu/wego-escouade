@@ -171,8 +171,8 @@
   <div id="topbar">
     <div class="brand">Escou<span>a</span>de</div>
     <div class="stat"><b class="mono" id="turnN">1</b><i>tour / 12</i></div>
-    <div class="stat"><i>zones tenues</i><div class="score" id="scoreB"></div></div>
-    <div class="stat"><i>ennemi</i><div class="score" id="scoreR"></div></div>
+    <div class="stat"><i id="labB">zones tenues</i><div class="score" id="scoreB"></div></div>
+    <div class="stat"><i id="labR">ennemi</i><div class="score" id="scoreR"></div></div>
     <button id="terrain" title="Cliquer pour changer le terrain (relance une partie)">Terrain : Maison</button>
     <div id="phase">Phase d'ordres</div>
   </div>
@@ -240,6 +240,11 @@
 
     <div class="home-sec">
       <div class="home-h">Mode de jeu</div>
+      <div id="homeGameModes" class="home-modes"></div>
+    </div>
+
+    <div class="home-sec">
+      <div class="home-h">Visibilité</div>
       <div id="homeModes" class="home-modes"></div>
     </div>
 

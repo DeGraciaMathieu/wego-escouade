@@ -23,7 +23,7 @@ import { isWallT, tcost, tcostPx, solid, blocksSight } from './rules/terrain.js'
 import { coverMul, isCovered } from './rules/cover.js';
 import { los } from './rules/los.js';
 import { findPath, trimPath } from './rules/pathfind.js';
-import { zoneControl, roundPoint, victoryOutcome, timeUpOutcome } from './rules/victory.js';
+import { zoneControl, roundPoint, victoryOutcome, timeUpOutcome, deathmatchOutcome } from './rules/victory.js';
 import { hitChance, shotAngle } from './rules/combat.js';
 import { threatTiles } from './rules/threat.js';
 import { visibleTiles } from './rules/visibility.js';
@@ -54,6 +54,7 @@ let archetypeKey='maison';              // type de terrain choisi pour la partie
 let playerSquad=ROSTER.slice();         // 4 classes choisies par le joueur (une par emplacement)
 let fogMode=false;                      // mode brouillard de guerre (choisi à l'accueil)
 let visGrid, explored;                  // tuiles vues maintenant / déjà explorées (brouillard)
+let gameMode='zones';                   // objectif : 'zones' (contrôle) ou 'dm' (deathmatch)
 let mem={};           // mémoire du joueur : dernière position connue des ennemis
 let aiMem={};         // mémoire de l'IA
 let zones=[];                           // zones de contrôle du tirage courant
@@ -63,6 +64,7 @@ let zones=[];                           // zones de contrôle du tirage courant
    ========================================================================== */
 function genMap(){
   ({grid,indoor,rooms,zones}=generateMap(rng,ARCHETYPES[archetypeKey]));
+  if(gameMode==='dm') zones=[];             // deathmatch : aucune zone à tenir
   mapSeed=(Math.random()*4294967296)>>>0;
   drawTerrain();
 }
@@ -735,16 +737,26 @@ function endResolve(){
   for(const u of units){ u.mv=null; if(u.fire&&u.fire.kind==='nade') u.fire=null; u.fire=null; u.supp*=SUPP_ENDTURN_MULT; }
   for(let i=smokes.length-1;i>=0;i--){ if(--smokes[i].turns<=0) smokes.splice(i,1); }
   rebuildSmoke();
-  // décompte : on tient une zone si l'on y est plus nombreux ; le point va à qui en tient le plus
-  const {holders,zb,zr}=zoneControl(zones,units);
-  zones.forEach((z,i)=>z.held=holders[i]);
-  const pt=roundPoint(zb,zr);
-  if(pt==='b') scoreB++; else if(pt==='r') scoreR++;
+  const aliveB=alive('b').length, aliveR=alive('r').length;
+  if(gameMode==='dm'){
+    // deathmatch : le score compte les éliminations infligées de part et d'autre
+    scoreB=units.filter(u=>u.side==='r').length-aliveR;
+    scoreR=units.filter(u=>u.side==='b').length-aliveB;
+  } else {
+    // décompte : on tient une zone si l'on y est plus nombreux ; le point va à qui en tient le plus
+    const {holders,zb,zr}=zoneControl(zones,units);
+    zones.forEach((z,i)=>z.held=holders[i]);
+    const pt=roundPoint(zb,zr);
+    if(pt==='b') scoreB++; else if(pt==='r') scoreR++;
+  }
 
-  const outcome=victoryOutcome({aliveR:alive('r').length,aliveB:alive('b').length,scoreB,scoreR});
+  const outcome=victoryOutcome({aliveR,aliveB,scoreB,scoreR});
   if(outcome) return finish(outcome.title,outcome.sub);
   turn++;
-  if(turn>MAXTURN){ const o=timeUpOutcome(scoreB,scoreR); return finish(o.title,o.sub); }
+  if(turn>MAXTURN){
+    const o=gameMode==='dm'?deathmatchOutcome(aliveB,aliveR):timeUpOutcome(scoreB,scoreR);
+    return finish(o.title,o.sub);
+  }
   phase='plan'; sel=alive('b')[0]||null; mode='auto'; refreshUI();
 }
 function finish(t,s){
@@ -1448,12 +1460,23 @@ function renderSlots(){
     card.querySelector('.htoken').onclick=()=>cycle(1);
   });
 }
+const GAMEMODES=[
+  {k:'zones',name:'Contrôle de zones',d:'Tenez les zones marquées : victoire aux points ou par élimination.'},
+  {k:'dm',name:'Deathmatch',d:'Aucune zone : neutralisez toute l\'escouade adverse. Au temps imparti, le plus de survivants l\'emporte.'},
+];
 const MODES=[
   {k:'std',name:'Standard',d:'Terrain entier visible ; les ennemis n\'apparaissent qu\'à vue.'},
   {k:'fog',name:'Brouillard de guerre',d:'Voile sur tout ce que l\'escouade ne voit pas ; les zones explorées restent en mémoire.'},
 ];
 function buildHome(){
   renderSlots();
+  document.getElementById('homeGameModes').innerHTML=GAMEMODES.map(m=>
+    `<button class="hterr ${((m.k==='dm')===(gameMode==='dm'))?'sel':''}" data-gmode="${m.k}">
+      <b>${m.name}</b><small>${m.d}</small></button>`).join('');
+  document.querySelectorAll('#homeGameModes .hterr').forEach(b=>b.onclick=()=>{
+    gameMode=b.dataset.gmode;
+    document.querySelectorAll('#homeGameModes .hterr').forEach(x=>x.classList.toggle('sel',x===b));
+  });
   document.getElementById('homeTerrains').innerHTML=ARCHETYPE_ORDER.map(k=>
     `<button class="hterr ${k===archetypeKey?'sel':''}" data-terr="${k}">
       <b>${ARCHETYPES[k].name}</b><small>${TERRAIN_DESC[k]||''}</small></button>`).join('');
@@ -1493,9 +1516,13 @@ function refreshUI(){
   document.getElementById('phase').textContent=
     phase==='plan'?"Phase d'ordres":phase==='resolve'?'Résolution simultanée'
       :phase==='replay'?'Replay':'Fin de partie';
-  const pips=(n,c)=>Array.from({length:WINPTS},(_,i)=>`<div class="pip ${c} ${i<n?'on':''}"></div>`).join('');
+  const dm=gameMode==='dm';
+  const cap=dm?units.filter(u=>u.side==='b').length:WINPTS;   // deathmatch : une pastille par unité adverse
+  const pips=(n,c)=>Array.from({length:cap},(_,i)=>`<div class="pip ${c} ${i<n?'on':''}"></div>`).join('');
   document.getElementById('scoreB').innerHTML=pips(scoreB,'b');
   document.getElementById('scoreR').innerHTML=pips(scoreR,'r');
+  document.getElementById('labB').textContent=dm?'éliminations':'zones tenues';
+  document.getElementById('labR').textContent=dm?'pertes':'ennemi';
 
   squadEl.innerHTML=units.filter(u=>u.side==='b').map(u=>{
     let ord='';
