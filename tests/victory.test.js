@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { zoneControl, roundPoint, victoryOutcome } from '../src/rules/victory.js';
+import { zoneControl, roundPoint, victoryOutcome, deathmatchOutcome } from '../src/rules/victory.js';
 import { WINPTS, TILE } from '../src/config.js';
 
 const at = t => t * TILE + TILE / 2;
@@ -34,4 +34,10 @@ test('atteindre le seuil de points de zones donne la victoire', () => {
 
 test('tant qu\'aucune condition n\'est remplie, la partie continue', () => {
   assert.equal(victoryOutcome({ aliveR: 4, aliveB: 4, scoreB: 1, scoreR: 1 }), null);
+});
+
+test('en deathmatch au temps imparti, le camp avec le plus de survivants gagne', () => {
+  assert.equal(deathmatchOutcome(3, 1).title, 'Victoire — dernier debout');
+  assert.equal(deathmatchOutcome(1, 2).title, 'Défaite');
+  assert.equal(deathmatchOutcome(2, 2).title, 'Match nul');
 });

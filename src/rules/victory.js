@@ -36,3 +36,9 @@ export const timeUpOutcome = (scoreB, scoreR) => ({
   title: scoreB > scoreR ? 'Victoire aux points' : scoreB < scoreR ? 'Défaite aux points' : 'Match nul',
   sub: 'Fin du temps imparti',
 });
+
+/* deathmatch au temps imparti : la victoire va au camp le plus fourni en survivants */
+export const deathmatchOutcome = (aliveB, aliveR) => ({
+  title: aliveB > aliveR ? 'Victoire — dernier debout' : aliveB < aliveR ? 'Défaite' : 'Match nul',
+  sub: 'Fin du temps imparti — plus d\'unités survivantes',
+});
