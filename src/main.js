@@ -50,6 +50,7 @@ let turn, phase, rt, shake, hitstop, scoreB, scoreR, over;
 let sel=null, mode='auto', hover={x:-999,y:-999}, hoverPath=null, speed=1;
 let showThreat=false;                   // overlay de menace (touche A)
 let archetypeKey='maison';              // type de terrain choisi pour la partie
+let playerSquad=ROSTER.slice();         // 4 classes choisies par le joueur (une par emplacement)
 let mem={};           // mémoire du joueur : dernière position connue des ennemis
 let aiMem={};         // mémoire de l'IA
 let zones=[];                           // zones de contrôle du tirage courant
@@ -319,10 +320,10 @@ function mkUnit(side,cls,x,y){
 function setupUnits(){
   units=[]; uid=1;
   const ys=[2,6,10,14];
-  ROSTER.forEach((cls,i)=>{
-    units.push(mkUnit('b',cls,1.5*TILE,(ys[i]+.5)*TILE));
-    units.push(mkUnit('r',cls,(COLS-1.5)*TILE,(ROWS-1-ys[i]+.5)*TILE));
-  });
+  for(let i=0;i<ys.length;i++){
+    units.push(mkUnit('b',playerSquad[i],1.5*TILE,(ys[i]+.5)*TILE));   // escouade du joueur
+    units.push(mkUnit('r',ROSTER[i],(COLS-1.5)*TILE,(ROWS-1-ys[i]+.5)*TILE));  // IA : roster standard
+  }
 }
 const alive=s=>units.filter(u=>u.alive&&u.side===s);
 const byId=i=>units.find(u=>u.id===i);
@@ -1389,6 +1390,44 @@ document.getElementById('terrain').onclick=()=>{
   updateTerrainLabel(); newGame();
 };
 updateTerrainLabel();
+
+/* ==========================================================================
+   PAGE D'ACCUEIL — choix de l'escouade (4 emplacements) et du terrain
+   ========================================================================== */
+const TERRAIN_DESC={
+  maison:'Cloisonné : couloirs, pièces et angles serrés.',
+  ruines:'Éventré par les obus, gravats et longues lignes de vue.',
+  ouvert:'Grands volumes, peu de murs, presque tout se voit.',
+};
+function classOptions(sel){
+  return ROSTER.map(k=>`<option value="${k}" ${k===sel?'selected':''}>${CLS[k].tag} · ${CLS[k].name}</option>`).join('');
+}
+function buildHome(){
+  document.getElementById('homeClasses').innerHTML=ROSTER.map(k=>{
+    const c=CLS[k];
+    return `<div class="hclass"><b>${c.tag}</b><span>${c.name}</span>
+      <em>${c.hp} PV · ${c.dmg} dég · ${c.ideal} idéal</em></div>`;
+  }).join('');
+  document.getElementById('homeSlots').innerHTML=playerSquad.map((cls,i)=>
+    `<label class="hslot"><span>Unité ${i+1}</span>
+      <select data-slot="${i}">${classOptions(cls)}</select></label>`).join('');
+  document.querySelectorAll('#homeSlots select').forEach(s=>
+    s.onchange=()=>{ playerSquad[+s.dataset.slot]=s.value; });
+  document.getElementById('homeTerrains').innerHTML=ARCHETYPE_ORDER.map(k=>
+    `<button class="hterr ${k===archetypeKey?'sel':''}" data-terr="${k}">
+      <b>${ARCHETYPES[k].name}</b><small>${TERRAIN_DESC[k]||''}</small></button>`).join('');
+  document.querySelectorAll('.hterr').forEach(b=>b.onclick=()=>{
+    archetypeKey=b.dataset.terr;
+    document.querySelectorAll('.hterr').forEach(x=>x.classList.toggle('sel',x===b));
+  });
+}
+buildHome();
+document.getElementById('homePlay').onclick=()=>{
+  audio();
+  document.getElementById('home').classList.remove('on');
+  updateTerrainLabel(); newGame();
+};
+
 document.getElementById('rpQuit').onclick=()=>quitReplay();
 document.getElementById('rpPlay').onclick=()=>{ rp.playing=!rp.playing; updateReplayUI(); };
 document.getElementById('rpPrev').onclick=()=>loadReplayTurn(rp.t>1.2?rp.ti:rp.ti-1);
